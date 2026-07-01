@@ -1,0 +1,153 @@
+name: ci-cd
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  id-token: write # OIDC to AWS — no long-lived keys
+  pull-requests: write
+  security-events: write
+
+env:
+  AWS_REGION: eu-central-1
+
+jobs:
+  go-checks:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: alerting
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: alerting/go.mod
+      - name: Lint
+        run: |
+          test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
+          go vet ./...
+      - name: Test
+        run: go test -race -cover ./...
+
+  python-checks:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: miner
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Lint
+        run: |
+          pip install ruff
+          ruff check .
+          ruff format --check .
+      - name: Test
+        run: python -m unittest discover -s tests -v
+
+  terraform-checks:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infra
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+      - name: Format
+        run: terraform fmt -check -recursive
+      - name: Validate
+        run: |
+          terraform init -backend=false
+          terraform validate
+      - name: IaC security scan (Trivy)
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          scan-type: config
+          scan-ref: infra
+          exit-code: "1"
+          severity: HIGH,CRITICAL
+
+  terraform-plan:
+    if: github.event_name == 'pull_request'
+    needs: [terraform-checks]
+    runs-on: ubuntu-latest
+    environment: plan
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_TERRAFORM_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - uses: hashicorp/setup-terraform@v3
+      - name: Plan
+        working-directory: infra
+        run: |
+          terraform init
+          terraform plan -no-color -out=tfplan \
+            -var-file=envs/${{ vars.TF_ENV || 'dev' }}.tfvars | tee plan.txt
+      - name: Comment plan on PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const plan = fs.readFileSync('infra/plan.txt', 'utf8').slice(0, 60000);
+            await github.rest.issues.createComment({
+              ...context.repo,
+              issue_number: context.issue.number,
+              body: '### Terraform plan\n```\n' + plan + '\n```',
+            });
+
+  terraform-apply:
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    needs: [go-checks, python-checks, terraform-checks]
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_TERRAFORM_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - uses: hashicorp/setup-terraform@v3
+      - name: Apply
+        working-directory: infra
+        run: |
+          terraform init
+          terraform apply -auto-approve -var-file=envs/${{ vars.TF_ENV || 'dev' }}.tfvars
+
+  deploy-services:
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    needs: [terraform-apply]
+    runs-on: ubuntu-latest
+    environment: production
+    strategy:
+      matrix:
+        service: [miner, alerting]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Login to ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+      - name: Build and push image
+        run: |
+          IMAGE="${{ steps.ecr.outputs.registry }}/autorater-${{ matrix.service }}:${{ github.sha }}"
+          docker build -t "$IMAGE" ${{ matrix.service }}
+          docker push "$IMAGE"
+      - name: Roll alerting service
+        if: matrix.service == 'alerting'
+        run: |
+          aws ecs update-service \
+            --cluster autorater-prod \
+            --service alerting \
+            --force-new-deployment
+        # The miner needs no rollout: EventBridge launches the freshly pushed
+        # task definition image on its next scheduled sweep.
