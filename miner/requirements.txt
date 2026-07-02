@@ -1,5 +1,5 @@
-# The miner is stdlib-only by design (asyncio + urllib). boto3 is imported
-# lazily for the S3 source; anthropic is listed for the production judge swap.
+# The miner is stdlib-only by design (asyncio + urllib — the OpenRouter judge
+# needs no SDK). boto3 is imported lazily for the S3 source, DynamoDB cursor
+# store and S3 results sink.
 boto3==1.34.144
 botocore==1.34.144
-anthropic==0.31.2

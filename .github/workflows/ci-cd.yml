@@ -12,7 +12,7 @@ permissions:
   security-events: write
 
 env:
-  AWS_REGION: eu-central-1
+  AWS_REGION: us-east-1
 
 jobs:
   go-checks:
@@ -54,7 +54,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: infra
+        working-directory: iac
     steps:
       - uses: actions/checkout@v4
       - uses: hashicorp/setup-terraform@v3
@@ -68,7 +68,7 @@ jobs:
         uses: aquasecurity/trivy-action@0.24.0
         with:
           scan-type: config
-          scan-ref: infra
+          scan-ref: iac
           exit-code: "1"
           severity: HIGH,CRITICAL
 
@@ -85,7 +85,7 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
       - uses: hashicorp/setup-terraform@v3
       - name: Plan
-        working-directory: infra
+        working-directory: iac
         run: |
           terraform init
           terraform plan -no-color -out=tfplan \
@@ -95,7 +95,7 @@ jobs:
         with:
           script: |
             const fs = require('fs');
-            const plan = fs.readFileSync('infra/plan.txt', 'utf8').slice(0, 60000);
+            const plan = fs.readFileSync('iac/plan.txt', 'utf8').slice(0, 60000);
             await github.rest.issues.createComment({
               ...context.repo,
               issue_number: context.issue.number,
@@ -115,7 +115,7 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
       - uses: hashicorp/setup-terraform@v3
       - name: Apply
-        working-directory: infra
+        working-directory: iac
         run: |
           terraform init
           terraform apply -auto-approve -var-file=envs/${{ vars.TF_ENV || 'dev' }}.tfvars

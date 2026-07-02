@@ -1,7 +1,7 @@
 variable "aws_region" {
   description = "Deployment region"
   type        = string
-  default     = "eu-central-1"
+  default     = "us-east-1"
 }
 
 variable "app_name" {
@@ -58,4 +58,10 @@ variable "miner_schedule" {
 variable "data_lake_bucket" {
   description = "Ingestion data lake the miner polls (from the ingestion stack)"
   type        = string
+}
+
+variable "judge_model" {
+  description = "OpenRouter model id for the LLM-as-Judge (switch providers by changing this)"
+  type        = string
+  default     = "google/gemini-2.5-flash"
 }

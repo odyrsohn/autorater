@@ -11,19 +11,21 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 )
 
 // Alert is the normalized regression alert accepted by the webhook.
 type Alert struct {
-	Fingerprint string  `json:"fingerprint"`
-	CaseID      string  `json:"case_id"`
-	TenantID    string  `json:"tenant_id"`
-	FailureType string  `json:"failure_type"`
-	Severity    string  `json:"severity"` // high | critical
-	Score       int     `json:"score"`
-	Summary     string  `json:"summary"`
-	WindowRate  float64 `json:"window_failure_rate,omitempty"`
+	Fingerprint      string   `json:"fingerprint"`
+	CaseID           string   `json:"case_id"`
+	TenantID         string   `json:"tenant_id"`
+	FailureType      string   `json:"failure_type"`
+	SafetyCategories []string `json:"safety_categories,omitempty"`
+	Severity         string   `json:"severity"` // high | critical
+	Score            int      `json:"score"`
+	Summary          string   `json:"summary"`
+	WindowRate       float64  `json:"window_failure_rate,omitempty"`
 }
 
 // Dispatcher delivers an alert to one channel.
@@ -68,18 +70,19 @@ type Slack struct {
 func (s *Slack) Name() string { return "slack" }
 
 func (s *Slack) Dispatch(ctx context.Context, a Alert) error {
+	detail := fmt.Sprintf(
+		"*%s regression detected*\n• tenant: `%s`\n• case: `%s`\n• judge score: *%d*\n• %s",
+		a.FailureType, a.TenantID, a.CaseID, a.Score, a.Summary,
+	)
+	if len(a.SafetyCategories) > 0 {
+		detail += fmt.Sprintf("\n• safety: `%s`", strings.Join(a.SafetyCategories, "`, `"))
+	}
 	payload := map[string]any{
 		"text": fmt.Sprintf(":rotating_light: [%s] %s regression — tenant %s", a.Severity, a.FailureType, a.TenantID),
 		"blocks": []map[string]any{
 			{
 				"type": "section",
-				"text": map[string]string{
-					"type": "mrkdwn",
-					"text": fmt.Sprintf(
-						"*%s regression detected*\n• tenant: `%s`\n• case: `%s`\n• judge score: *%d*\n• %s",
-						a.FailureType, a.TenantID, a.CaseID, a.Score, a.Summary,
-					),
-				},
+				"text": map[string]string{"type": "mrkdwn", "text": detail},
 			},
 		},
 	}
@@ -108,6 +111,7 @@ func (p *PagerDuty) Dispatch(ctx context.Context, a Alert) error {
 				"case_id":             a.CaseID,
 				"window_failure_rate": a.WindowRate,
 				"rationale":           a.Summary,
+				"safety_categories":   a.SafetyCategories,
 			},
 		},
 	}

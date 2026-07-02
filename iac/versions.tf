@@ -11,7 +11,7 @@ terraform {
   backend "s3" {
     bucket         = "mlops-terraform-state"
     key            = "autorater/terraform.tfstate"
-    region         = "eu-central-1"
+    region         = "us-east-1"
     dynamodb_table = "terraform-locks"
     encrypt        = true
   }

@@ -5,7 +5,7 @@
 ## Tagging rule
 
 All AWS resources inherit five cost-allocation tags from the Terraform
-provider `default_tags` block (`infra/main.tf`): `app:name`,
+provider `default_tags` block (`iac/main.tf`): `app:name`,
 `app:projectName`, `app:component`, `app:teamName`, `app:env`. Because the
 tags are applied at the provider, they propagate to every resource in the
 stack — including the observability layer itself: CloudWatch log groups,
@@ -48,3 +48,14 @@ governed in code, not by hope:
 4. **Observability caps:** 30-day log retention and a 10% X-Ray sampling
    rate keep the tracing hub's cost proportional, and — because it is tagged
    — visible.
+5. **Judge spend is measurable, not estimated.** Every verdict row in the
+   Athena `judged_cases` table carries the model that scored it, and the
+   miner's `miner_stats` line reports real `input_tokens`/`output_tokens`
+   from the provider's usage block. The `judge-usage-by-model` named query
+   plus the JudgeCalls/SuppressedByDedup dashboard widgets turn the dedup
+   gate's savings into an auditable number. Switching to a cheaper model is
+   one Terraform variable (`judge_model`) — and the effect shows up in the
+   same query the next day.
+6. **Incremental sweeps:** the DynamoDB cursor means a restart never re-lists
+   or re-judges the whole bucket, and the conditional lease prevents an
+   overlapping launch from paying for the same records twice.
