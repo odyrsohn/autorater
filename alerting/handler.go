@@ -44,7 +44,8 @@ func (h *alertHandler) handleAlert(w http.ResponseWriter, r *http.Request) {
 
 	admitted, dups := h.cache.Admit(a.Fingerprint)
 	if !admitted {
-		h.logger.Info("alert suppressed", "fingerprint", a.Fingerprint, "duplicates", dups)
+		h.logger.Info("alert_suppressed",
+			"fingerprint", a.Fingerprint, "tenant_id", a.TenantID, "failure_mode", a.FailureMode, "duplicates", dups)
 		writeJSON(w, http.StatusOK, map[string]any{"status": "suppressed", "duplicates": dups})
 		return
 	}
@@ -56,7 +57,9 @@ func (h *alertHandler) handleAlert(w http.ResponseWriter, r *http.Request) {
 	delivered := make([]string, 0, len(dispatchers))
 	for _, d := range dispatchers {
 		if err := d.Dispatch(r.Context(), a); err != nil {
-			h.logger.Error("dispatch failed", "channel", d.Name(), "fingerprint", a.Fingerprint, "err", err)
+			h.logger.Error("dispatch_failed",
+				"channel", d.Name(), "fingerprint", a.Fingerprint, "tenant_id", a.TenantID,
+				"failure_mode", a.FailureMode, "err", err)
 			continue
 		}
 		delivered = append(delivered, d.Name())
@@ -66,9 +69,10 @@ func (h *alertHandler) handleAlert(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.logger.Info("alert dispatched",
-		"fingerprint", a.Fingerprint, "severity", a.Severity,
-		"failure_type", a.FailureType, "channels", delivered)
+	h.logger.Info("alert_dispatched",
+		"fingerprint", a.Fingerprint, "tenant_id", a.TenantID, "severity", a.Severity,
+		"failure_mode", a.FailureMode, "lang", a.Lang, "client_platform", a.ClientPlatform,
+		"client_os_version", a.ClientOSVersion, "serving_model", a.ServingModel, "channels", delivered)
 	writeJSON(w, http.StatusAccepted, map[string]any{"status": "dispatched", "channels": delivered})
 }
 

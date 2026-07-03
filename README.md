@@ -57,11 +57,12 @@ LOCAL_DATA_DIR=./data ALERT_WEBHOOK_URL=http://localhost:8070/v1/alerts \
   CURSOR_FILE=./.miner-cursor.json python -m miner.worker
 ```
 
-The sweep prints a pure-JSON `miner_stats` line — `judge_calls` vs
-`suppressed_by_dedup` is the live view of the cost gate. Run it twice: the
-second sweep processes **0 records** because the cursor is durable. Judged
-cases land in `./results/results/dt=YYYY-MM-DD/<sweep>.jsonl`, and `r2`
-raises a `safety:prompt_injection` **critical** alert.
+Both services emit single-line JSON logs; the sweep ends with a
+`sweep_summary` event — `judge_calls` vs `suppressed_by_dedup` is the live
+view of the cost gate. Run it twice: the second sweep processes
+**0 records** because the cursor is durable. Judged cases land in
+`./results/results/dt=YYYY-MM-DD/<sweep>.jsonl`, and `r2` raises a
+`safety:prompt_injection` **critical** alert.
 
 ### Real judge
 
@@ -76,16 +77,28 @@ hosted model (`anthropic/claude-sonnet-5`, `openai/gpt-...`) is one env
 change. HTTP/parse failures degrade to a conservative fallback verdict and
 are counted (`judge_failures`), never crashing a sweep.
 
+## Structured logging & on-call slicing
+
+Both services emit the canonical envelope (`service`, `env`, a stable
+snake_case `msg` event name) plus, whenever known, five slice dimensions:
+`tenant_id`, `failure_mode`, `lang`, `client_platform`/`client_os_version`,
+`serving_model` (+ judge-assigned `judge_category`, e.g.
+`hallucination`). Five saved CloudWatch Logs Insights queries
+(`iac/queries.tf`: `by-tenant`, `by-failure-mode`, `by-language`,
+`by-client`, `by-model`) answer on-call questions live by editing one
+literal. Design: [.plan/standardized-logging.md](.plan/standardized-logging.md).
+
 ## Query surface & dashboard
 
 - **Athena** (`autorater-<env>` workgroup, `judged_cases` Glue table with
   partition projection — no crawlers): canned named queries for regression
-  rate by day/tenant, top failure types, safety-category volumes, judge
-  usage by model.
+  rate by day/tenant, top failure modes, safety-category volumes, judge
+  usage by (judge) model, **failure rate by serving model** (Claude vs OSS
+  fallback), **regressions by language**, **failures by client**.
 - **CloudWatch dashboard** `autorater-<env>`: judge calls vs dedup
   suppressions (the cost gate), alerts dispatched, safety flags, judge
-  fallbacks — all lifted from the miner's `miner_stats` log line by metric
-  filters.
+  fallbacks — all lifted from the miner's `sweep_summary` structured log
+  event by metric filters.
 
 ## Deployment guide
 

@@ -1,4 +1,6 @@
+import io
 import json
+import logging
 import sys
 import tempfile
 import unittest
@@ -6,6 +8,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from miner import obslog
 from miner.results import LocalResultsSink
 
 
@@ -40,6 +43,25 @@ class TestLocalResultsSink(unittest.TestCase):
             second = sink.flush("s2")
             self.assertEqual(len(Path(first).read_text().strip().splitlines()), 1)
             self.assertEqual(len(Path(second).read_text().strip().splitlines()), 1)
+
+    def test_flush_emits_structured_event(self):
+        buf = io.StringIO()
+        handler = logging.StreamHandler(buf)
+        handler.setFormatter(obslog.JsonFormatter("miner"))
+        logging.getLogger().handlers = [handler]
+        logging.getLogger().setLevel(logging.INFO)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            sink = LocalResultsSink(tmp)
+            sink.write({"case_id": "c1"})
+            sink.write({"case_id": "c2"})
+            dest = sink.flush("s1")
+
+        rec = json.loads(buf.getvalue().strip().splitlines()[-1])
+        self.assertEqual(rec["msg"], "results_flushed")
+        self.assertEqual(rec["sweep_id"], "s1")
+        self.assertEqual(rec["records"], 2)
+        self.assertEqual(rec["destination"], dest)
 
 
 if __name__ == "__main__":

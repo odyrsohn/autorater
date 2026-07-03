@@ -14,6 +14,8 @@ import os
 from datetime import datetime, timezone
 from pathlib import Path
 
+from miner import obslog
+
 log = logging.getLogger("miner.results")
 
 
@@ -35,10 +37,13 @@ class ResultsSink:
         dt = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         key = f"results/dt={dt}/{sweep_id}.jsonl"
         body = "\n".join(json.dumps(r) for r in self._buffer) + "\n"
+        count = len(self._buffer)
         dest = self._store(key, body)
-        self.flushed += len(self._buffer)
+        self.flushed += count
         self._buffer.clear()
-        log.info("flushed results to %s", dest)
+        obslog.log_event(
+            log, "results_flushed", sweep_id=sweep_id, destination=dest, records=count
+        )
         return dest
 
     def _store(self, key: str, body: str) -> str:

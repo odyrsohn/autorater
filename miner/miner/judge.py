@@ -22,11 +22,15 @@ import re
 import urllib.request
 from dataclasses import dataclass
 
+from miner import obslog
+
 log = logging.getLogger("miner.judge")
 
 RUBRIC_PROMPT = """You are an evaluation judge for production LLM traffic.
 Score the following failure case from 0 (benign) to 100 (severe regression).
-Respond with ONLY a JSON object: {{"score": <int>, "verdict": "<pass|degraded|regression>",
+Classify it into one category. Respond with ONLY a JSON object:
+{{"score": <int>, "verdict": "<pass|degraded|regression>",
+"category": "<hallucination|factual_error|refusal|format|other>",
 "rationale": "<one sentence>"}}.
 
 Failure type: {failure_type}
@@ -38,6 +42,13 @@ SEVERE_THRESHOLD = 70
 DEFAULT_MODEL = "google/gemini-2.5-flash"
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 
+# Judge-assigned classification — distinct from failure_mode (the upstream/
+# detector taxonomy): a single case's failure_mode might be
+# "retrieval_failure" while the judge's category is "hallucination" (the
+# model filled a retrieval gap with fabricated content). Both are
+# independently filterable slice values.
+CATEGORIES = ("hallucination", "factual_error", "refusal", "format", "other")
+
 _JSON_BLOB = re.compile(r"\{.*\}", re.DOTALL)
 
 
@@ -45,6 +56,7 @@ _JSON_BLOB = re.compile(r"\{.*\}", re.DOTALL)
 class Verdict:
     score: int
     verdict: str
+    category: str
     rationale: str
     model: str
 
@@ -63,26 +75,33 @@ class BaseJudge:
         self.input_tokens = 0
         self.output_tokens = 0
 
-    def _invoke(self, prompt: str, failure_type: str) -> str:
+    def _invoke(self, prompt: str, failure_mode: str) -> str:
         raise NotImplementedError
 
     def score(self, case: dict) -> Verdict:
-        failure_type = case.get("failure_type", "unknown")
+        failure_mode = case.get("failure_mode", "unknown")
         prompt = RUBRIC_PROMPT.format(
-            failure_type=failure_type,
+            failure_type=failure_mode,
             prompt=(case.get("prompt") or "")[:2000],
             response=(case.get("response") or "")[:2000],
         )
         self.calls += 1
         try:
-            raw = self._invoke(prompt, failure_type)
+            raw = self._invoke(prompt, failure_mode)
             return self._parse(raw)
         except Exception as exc:  # noqa: BLE001 — a bad judge response must not kill the sweep
             self.failures += 1
-            log.error("judge invocation failed (%s); using fallback verdict", exc)
+            obslog.log_event(
+                log,
+                "judge_fallback",
+                level=logging.ERROR,
+                failure_mode="judge_" + type(exc).__name__.lower(),
+                err=str(exc),
+            )
             return Verdict(
                 score=50,
                 verdict="degraded",
+                category="other",
                 rationale=f"judge unavailable ({type(exc).__name__}); conservative fallback",
                 model=self.model,
             )
@@ -97,9 +116,13 @@ class BaseJudge:
         verdict = str(data.get("verdict", "degraded"))
         if verdict not in ("pass", "degraded", "regression"):
             verdict = "degraded"
+        category = str(data.get("category", "other"))
+        if category not in CATEGORIES:
+            category = "other"
         return Verdict(
             score=score,
             verdict=verdict,
+            category=category,
             rationale=str(data.get("rationale", ""))[:500],
             model=self.model,
         )
@@ -113,7 +136,7 @@ class OpenRouterJudge(BaseJudge):
         self.api_key = api_key
         self.timeout = timeout
 
-    def _invoke(self, prompt: str, failure_type: str) -> str:
+    def _invoke(self, prompt: str, failure_mode: str) -> str:
         body = json.dumps(
             {
                 "model": self.model,
@@ -149,23 +172,35 @@ class MockJudge(BaseJudge):
     def __init__(self, model: str = "mock-judge"):
         super().__init__(model)
 
-    def _invoke(self, prompt: str, failure_type: str) -> str:
+    # Deterministic failure_mode -> category mapping so tests (and the
+    # "hallucination"/"ASR-TTS" on-call scenario) are reproducible without a
+    # real judge: retrieval_failure commonly manifests as the model filling
+    # a retrieval gap with fabricated content (classic RAG hallucination).
+    _CATEGORY_BY_MODE = {
+        "non_terminating_loop": "format",
+        "retrieval_failure": "hallucination",
+        "truncated_output": "format",
+    }
+
+    def _invoke(self, prompt: str, failure_mode: str) -> str:
         self.input_tokens += len(prompt) // 4  # rough estimate
         digest = int(hashlib.sha256(prompt.encode()).hexdigest(), 16)
         base = {
             "non_terminating_loop": 85,
             "retrieval_failure": 75,
             "truncated_output": 55,
-        }.get(failure_type, 40)
-        if failure_type.startswith("safety:"):
+        }.get(failure_mode, 40)
+        if failure_mode.startswith("safety:"):
             base = 80
         score = min(100, base + digest % 15)
         verdict = "regression" if score >= SEVERE_THRESHOLD else "degraded"
+        category = self._CATEGORY_BY_MODE.get(failure_mode, "other")
         return json.dumps(
             {
                 "score": score,
                 "verdict": verdict,
-                "rationale": f"Mock-judged {failure_type} at severity {score}.",
+                "category": category,
+                "rationale": f"Mock-judged {failure_mode} at severity {score}.",
             }
         )
 
@@ -174,7 +209,15 @@ def judge_from_env() -> BaseJudge:
     api_key = os.getenv("OPENROUTER_API_KEY")
     if api_key:
         judge = OpenRouterJudge(api_key)
-        log.info("using OpenRouter judge model=%s", judge.model)
+        obslog.log_event(
+            log, "judge_selected", judge_model=judge.model, provider="openrouter"
+        )
         return judge
-    log.warning("OPENROUTER_API_KEY not set; using deterministic mock judge")
+    obslog.log_event(
+        log,
+        "judge_selected",
+        level=logging.WARNING,
+        judge_model="mock-judge",
+        provider="mock",
+    )
     return MockJudge()

@@ -102,6 +102,9 @@ resource "aws_ecs_task_definition" "alerting" {
       containerPort = 8070
       protocol      = "tcp"
     }]
+    environment = [
+      { name = "APP_ENV", value = var.env },
+    ]
     secrets = [
       { name = "SLACK_WEBHOOK_URL", valueFrom = aws_ssm_parameter.secret["SLACK_WEBHOOK_URL"].arn },
       { name = "PAGERDUTY_ROUTING_KEY", valueFrom = aws_ssm_parameter.secret["PAGERDUTY_ROUTING_KEY"].arn },
@@ -149,6 +152,7 @@ resource "aws_ecs_task_definition" "miner" {
       { name = "JUDGE_MODEL", value = var.judge_model },
       { name = "CURSOR_TABLE", value = aws_dynamodb_table.miner_state.name },
       { name = "RESULTS_BUCKET", value = aws_s3_bucket.results.bucket },
+      { name = "APP_ENV", value = var.env },
     ]
     secrets = [
       { name = "OPENROUTER_API_KEY", valueFrom = aws_ssm_parameter.secret["OPENROUTER_API_KEY"].arn },

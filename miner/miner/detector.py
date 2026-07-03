@@ -27,6 +27,20 @@ RETRIEVAL_MARKERS = (
 LOOP_MIN_REPEATS = 5
 LOOP_CHUNK = 24
 
+# Upstream-classified failure modes: any client/gateway may set `error_type`
+# on a record to bypass the heuristics below and assign a failure_mode
+# directly. This is how non-text clients report failures the text
+# heuristics can't see — most notably voice pipelines (AAOS/CarPlay-style
+# in-car assistants), where the LLM stage never sees the raw audio:
+#
+#   asr_degradation  — speech-to-text confidence/WER below threshold
+#   tts_degradation  — text-to-speech synthesis failure or audio artifact
+#
+# `error_type` is passed through verbatim (any string is accepted) so new
+# upstream failure classes need no code change here; this tuple documents
+# the known/expected vocabulary for on-call and is asserted in tests.
+KNOWN_UPSTREAM_FAILURE_MODES = ("asr_degradation", "tts_degradation")
+
 
 def detect_repetition(text: str) -> bool:
     """Cheap non-termination heuristic: a chunk repeating LOOP_MIN_REPEATS+
@@ -42,7 +56,11 @@ def detect_repetition(text: str) -> bool:
 
 
 def classify_failure(record: dict) -> str | None:
-    """Return a failure type for the record, or None if it looks healthy."""
+    """Return a failure_mode for the record, or None if it looks healthy.
+
+    An explicit `error_type` on the record (see KNOWN_UPSTREAM_FAILURE_MODES)
+    always wins over the text heuristics below.
+    """
     if record.get("error_type"):
         return str(record["error_type"])
 

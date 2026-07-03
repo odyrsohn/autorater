@@ -30,8 +30,10 @@ pricing at openrouter.ai/models before switching.
 3. Merge → apply; the miner picks the new task def up on its next
    EventBridge sweep (no service roll needed).
 4. **Measure the switch**: the `judge-usage-by-model` Athena named query
-   splits judged cases and avg score by model per day — compare the first
-   days after the switch. `miner_stats` reports real
+   splits judged cases and avg score by (judge) model per day — compare the
+   first days after the switch. Don't confuse this with `serving_model`
+   (the traffic's own model — see `failure-rate-by-serving-model`). The
+   `sweep_summary` structured log event reports real
    `input_tokens`/`output_tokens` from the provider usage block.
 
 ## Contracts any judge change must keep

@@ -125,12 +125,39 @@ resource "aws_glue_catalog_table" "judged_cases" {
       type = "string"
     }
     columns {
-      name = "failure_type"
+      # Renamed from failure_type — standardized slice-dimension key shared
+      # across all three repos (see .plan/standardized-logging.md item 6).
+      # Historical rows written under the old column name return NULL here.
+      name = "failure_mode"
       type = "string"
     }
     columns {
       name = "safety_categories"
       type = "array<string>"
+    }
+    columns {
+      # Judge-assigned classification, distinct from failure_mode — e.g. a
+      # retrieval_failure case can be judge_category="hallucination".
+      name = "judge_category"
+      type = "string"
+    }
+    columns {
+      name = "lang"
+      type = "string"
+    }
+    columns {
+      name = "client_platform"
+      type = "string"
+    }
+    columns {
+      name = "client_os_version"
+      type = "string"
+    }
+    columns {
+      # Serving model that produced the traffic — distinct from `model`
+      # (the judge's own model, see judge-usage-by-model below).
+      name = "serving_model"
+      type = "string"
     }
     columns {
       name = "score"
@@ -201,10 +228,10 @@ locals {
     SQL
 
     top-failure-types = <<-SQL
-      SELECT failure_type, count(*) AS cases, avg(score) AS avg_score
+      SELECT failure_mode, judge_category, count(*) AS cases, avg(score) AS avg_score
       FROM ${local.table}
       WHERE dt >= date_format(date_add('day', -7, current_date), '%Y-%m-%d')
-      GROUP BY failure_type
+      GROUP BY failure_mode, judge_category
       ORDER BY cases DESC
     SQL
 
@@ -224,6 +251,42 @@ locals {
       GROUP BY dt, model
       ORDER BY dt DESC
     SQL
+
+    # "Compare the failure rates between the Claude 3.5 Sonnet slice and the
+    # open-source fallback model slice" — serving_model is the traffic's
+    # own model, NOT the judge model above.
+    failure-rate-by-serving-model = <<-SQL
+      SELECT dt, serving_model,
+             count(*)                                                   AS judged_cases,
+             sum(CASE WHEN verdict = 'regression' THEN 1 ELSE 0 END)     AS regressions,
+             ROUND(1.0 * sum(CASE WHEN verdict = 'regression' THEN 1 ELSE 0 END) / count(*), 4) AS regression_rate
+      FROM ${local.table}
+      WHERE dt >= date_format(date_add('day', -30, current_date), '%Y-%m-%d')
+        AND serving_model IS NOT NULL
+      GROUP BY dt, serving_model
+      ORDER BY dt DESC, regression_rate DESC
+    SQL
+
+    # "Show me all prompt regressions that occurred exclusively in Spanish."
+    regressions-by-language = <<-SQL
+      SELECT dt, lang, failure_mode, count(*) AS regressions
+      FROM ${local.table}
+      WHERE verdict = 'regression'
+        AND lang LIKE 'es%'
+        AND dt >= date_format(date_add('day', -30, current_date), '%Y-%m-%d')
+      GROUP BY dt, lang, failure_mode
+      ORDER BY dt DESC, regressions DESC
+    SQL
+
+    # "Slice the data to show only requests coming from AAOS 12 or ChromeOS."
+    failures-by-client = <<-SQL
+      SELECT dt, client_platform, client_os_version, failure_mode, count(*) AS cases
+      FROM ${local.table}
+      WHERE client_platform IS NOT NULL
+        AND dt >= date_format(date_add('day', -30, current_date), '%Y-%m-%d')
+      GROUP BY dt, client_platform, client_os_version, failure_mode
+      ORDER BY dt DESC, cases DESC
+    SQL
   }
 }
 
@@ -237,8 +300,11 @@ resource "aws_athena_named_query" "canned" {
 }
 
 # --- CloudWatch metrics + dashboard -----------------------------------------
-# The miner prints one pure-JSON stats line per sweep; these filters lift the
-# cost-control counters into metrics.
+# The miner emits one structured "sweep_summary" event per sweep (canonical
+# envelope, see .plan/standardized-logging.md); these filters lift the
+# cost-control counters into metrics. Filter matches the event NAME
+# ($.msg), not a free-text term — event name + these field keys are a
+# compatibility contract with worker.py's MiningWorker.report().
 locals {
   miner_metrics = {
     JudgeCalls        = "$.judge_calls"
@@ -253,7 +319,7 @@ resource "aws_cloudwatch_log_metric_filter" "miner" {
 
   name           = "${var.app_name}-${var.env}-${each.key}"
   log_group_name = aws_cloudwatch_log_group.miner.name
-  pattern        = "{ $.metric = \"miner_stats\" }"
+  pattern        = "{ $.msg = \"sweep_summary\" }"
 
   metric_transformation {
     name      = each.key

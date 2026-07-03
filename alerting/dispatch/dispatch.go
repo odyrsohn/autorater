@@ -20,12 +20,18 @@ type Alert struct {
 	Fingerprint      string   `json:"fingerprint"`
 	CaseID           string   `json:"case_id"`
 	TenantID         string   `json:"tenant_id"`
-	FailureType      string   `json:"failure_type"`
+	FailureMode      string   `json:"failure_mode"`
 	SafetyCategories []string `json:"safety_categories,omitempty"`
-	Severity         string   `json:"severity"` // high | critical
-	Score            int      `json:"score"`
-	Summary          string   `json:"summary"`
-	WindowRate       float64  `json:"window_failure_rate,omitempty"`
+	// Slice dimensions 3-5 (tenant/failure_mode are above); present when
+	// the source record carried them. See .plan/standardized-logging.md.
+	Lang            string  `json:"lang,omitempty"`
+	ClientPlatform  string  `json:"client_platform,omitempty"`
+	ClientOSVersion string  `json:"client_os_version,omitempty"`
+	ServingModel    string  `json:"serving_model,omitempty"`
+	Severity        string  `json:"severity"` // high | critical
+	Score           int     `json:"score"`
+	Summary         string  `json:"summary"`
+	WindowRate      float64 `json:"window_failure_rate,omitempty"`
 }
 
 // Dispatcher delivers an alert to one channel.
@@ -42,7 +48,7 @@ func post(ctx context.Context, name, url string, payload any, logger *slog.Logge
 		return err
 	}
 	if url == "" { // mock mode
-		logger.Info("dispatch (mock)", "channel", name, "payload", string(body))
+		logger.Info("dispatch_mock", "channel", name, "payload", string(body))
 		return nil
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
@@ -72,13 +78,28 @@ func (s *Slack) Name() string { return "slack" }
 func (s *Slack) Dispatch(ctx context.Context, a Alert) error {
 	detail := fmt.Sprintf(
 		"*%s regression detected*\n• tenant: `%s`\n• case: `%s`\n• judge score: *%d*\n• %s",
-		a.FailureType, a.TenantID, a.CaseID, a.Score, a.Summary,
+		a.FailureMode, a.TenantID, a.CaseID, a.Score, a.Summary,
 	)
 	if len(a.SafetyCategories) > 0 {
 		detail += fmt.Sprintf("\n• safety: `%s`", strings.Join(a.SafetyCategories, "`, `"))
 	}
+	// On-call sees the slice keys in the page itself — no need to jump to
+	// logs to know which language/client/model this regression came from.
+	if a.Lang != "" || a.ClientPlatform != "" || a.ServingModel != "" {
+		var dims []string
+		if a.Lang != "" {
+			dims = append(dims, fmt.Sprintf("lang=%s", a.Lang))
+		}
+		if a.ClientPlatform != "" {
+			dims = append(dims, fmt.Sprintf("client=%s %s", a.ClientPlatform, a.ClientOSVersion))
+		}
+		if a.ServingModel != "" {
+			dims = append(dims, fmt.Sprintf("model=%s", a.ServingModel))
+		}
+		detail += fmt.Sprintf("\n• %s", strings.Join(dims, " · "))
+	}
 	payload := map[string]any{
-		"text": fmt.Sprintf(":rotating_light: [%s] %s regression — tenant %s", a.Severity, a.FailureType, a.TenantID),
+		"text": fmt.Sprintf(":rotating_light: [%s] %s regression — tenant %s", a.Severity, a.FailureMode, a.TenantID),
 		"blocks": []map[string]any{
 			{
 				"type": "section",
@@ -104,7 +125,7 @@ func (p *PagerDuty) Dispatch(ctx context.Context, a Alert) error {
 		"event_action": "trigger",
 		"dedup_key":    a.Fingerprint,
 		"payload": map[string]any{
-			"summary":  fmt.Sprintf("[%s] %s regression, tenant %s, score %d", a.Severity, a.FailureType, a.TenantID, a.Score),
+			"summary":  fmt.Sprintf("[%s] %s regression, tenant %s, score %d", a.Severity, a.FailureMode, a.TenantID, a.Score),
 			"source":   "autorater-alerting",
 			"severity": "critical",
 			"custom_details": map[string]any{
@@ -112,6 +133,10 @@ func (p *PagerDuty) Dispatch(ctx context.Context, a Alert) error {
 				"window_failure_rate": a.WindowRate,
 				"rationale":           a.Summary,
 				"safety_categories":   a.SafetyCategories,
+				"lang":                a.Lang,
+				"client_platform":     a.ClientPlatform,
+				"client_os_version":   a.ClientOSVersion,
+				"serving_model":       a.ServingModel,
 			},
 		},
 	}

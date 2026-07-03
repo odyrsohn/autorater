@@ -15,7 +15,11 @@ import (
 )
 
 func main() {
-	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	// Canonical envelope base attrs (see .plan/standardized-logging.md).
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil)).With(
+		"service", "alerting",
+		"env", envOr("APP_ENV", "dev"),
+	)
 
 	handler := newHandler(
 		dedupe.New(15*time.Minute),
@@ -36,9 +40,9 @@ func main() {
 		Handler:           handler,
 		ReadHeaderTimeout: 5 * time.Second,
 	}
-	logger.Info("alerting engine listening", "addr", srv.Addr)
+	logger.Info("server_started", "addr", srv.Addr)
 	if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		logger.Error("server failed", "err", err)
+		logger.Error("server_failed", "err", err)
 		os.Exit(1)
 	}
 }

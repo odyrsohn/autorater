@@ -36,6 +36,12 @@ per-record failure classification (what is wrong) and a windowed rate view
   current failure rate > baseline, and z-score ≥ `sigma` (default 3).
 - **REQ-MINE-6** Both runtime failures and safety findings count as failure
   observations for the window (regression radar sees everything).
+- **REQ-MINE-7** The classification result is called `failure_mode`
+  everywhere downstream (logs, alerts, results rows) — never `failure_type`
+  — and any upstream `error_type` string is accepted verbatim. Known
+  non-text-client vocabulary (`asr_degradation`, `tts_degradation` — voice
+  pipelines where the LLM stage never observes raw audio) is documented in
+  `KNOWN_UPSTREAM_FAILURE_MODES` and asserted in tests.
 
 ## Anchors
 
@@ -47,6 +53,7 @@ per-record failure classification (what is wrong) and a windowed rate view
 | REQ-MINE-4 | `SlidingWindowDetector._evict` (EWMA on eviction) | `test_anomaly_on_failure_spike` |
 | REQ-MINE-5 | `SlidingWindowDetector.observe` | `test_no_anomaly_below_min_events`, `test_no_anomaly_when_healthy` |
 | REQ-MINE-6 | `miner/miner/worker.py` `process_record` observe call | `test_worker.py` safety + failure paths |
+| REQ-MINE-7 | `detector.py` `KNOWN_UPSTREAM_FAILURE_MODES`; rename applied throughout `worker.py` | `test_known_upstream_failure_modes_pass_through`, `test_known_upstream_failure_modes_documented` |
 
 ## Verification
 

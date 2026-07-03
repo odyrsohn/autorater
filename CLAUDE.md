@@ -22,11 +22,12 @@ miner over a JSONL dir with `CURSOR_FILE`; second sweep must process 0).
 
 - **The dedup gate guards spend**: nothing reaches the judge without
   passing `SemanticDeduplicator` (`miner/miner/dedup.py`). The gate keys on
-  `failure_type + response` (failure evidence), NOT the prompt. Never add a
+  `failure_mode + response` (failure evidence), NOT the prompt. Never add a
   judge call outside `MiningWorker._judge_case`.
 - **A judge must never crash a sweep**: HTTP/parse failures degrade to the
-  fallback verdict (`degraded`/50) and increment `judge_failures`. Keep
-  that contract for any new provider (`miner/miner/judge.py::BaseJudge`).
+  fallback verdict (`degraded`/50, `category="other"`) and increment
+  `judge_failures`, logged as `judge_fallback`. Keep that contract for any
+  new provider (`miner/miner/judge.py::BaseJudge`).
 - **Model switching is config**: `JUDGE_MODEL` env / `judge_model` TF var.
   No provider SDKs — the OpenRouter call is stdlib urllib on purpose.
 - **Sweep state is durable**: cursors + single-runner lease live in
@@ -36,9 +37,14 @@ miner over a JSONL dir with `CURSOR_FILE`; second sweep must process 0).
 - **Results rows are the query surface**: any new field written by
   `MiningWorker._judge_case` → results sink must be added to the Glue table
   columns in `iac/analytics.tf` and, if relevant, the named queries.
-- **Stats line is a metrics contract**: the pure-JSON `miner_stats` stdout
-  line feeds CloudWatch metric filters (`iac/analytics.tf`). Renaming a key
-  breaks dashboards — treat keys as API.
+- **`sweep_summary` is a metrics contract**: `worker.report()`'s structured
+  event feeds CloudWatch metric filters (`iac/analytics.tf`). Renaming the
+  event name or a field key breaks the dashboard — treat both as API.
+- **`failure_mode` is the standardized key** — never `failure_type` —
+  across logs, alert payloads, results rows, the Glue column and named
+  queries. `judge_category` is a *separate* judge-assigned classification
+  (`hallucination`/`factual_error`/`refusal`/`format`/`other`); a
+  `retrieval_failure` case commonly has `judge_category=hallucination`.
 - **Tags**: five `app:*` tags via provider `default_tags` (`iac/main.tf`);
   never per-resource. **Secrets**: SSM SecureStrings under
   `/projects/autorater/` (`OPENROUTER_API_KEY`, `SLACK_WEBHOOK_URL`,
@@ -46,13 +52,31 @@ miner over a JSONL dir with `CURSOR_FILE`; second sweep must process 0).
 - **Severity routing**: `high` → Slack; `critical` (safety-forced or window
   anomaly) → Slack + PagerDuty. Alerting dedupes by fingerprint (15 min TTL).
 
+## Structured logging (canonical envelope)
+
+Both services emit single-line JSON: `time`, `level`, `msg` (a **stable
+snake_case event name**, not prose), `service` (`miner`|`alerting`), `env`,
+plus whichever slice-dimension keys are known: `tenant_id`, `failure_mode`,
+`lang`, `client_platform`/`client_os_version`, `serving_model`,
+`judge_category`, `case_id`/`sweep_id`. Python uses
+`miner/miner/obslog.py` (`configure()` once, `log_event(logger,
+"event_name", **fields)` everywhere); Go uses `log/slog` with base attrs
+via `.With(...)`. **Never log prompt/response content.**
+
+Event names + field keys are a compatibility contract — CloudWatch metric
+filters (`iac/analytics.tf`, `iac/observability.tf`) and five saved Logs
+Insights queries (`iac/queries.tf`: `by-tenant`, `by-failure-mode`,
+`by-language`, `by-client`, `by-model`) match on them. Renaming one means
+moving the filter/query in the same change. Full design:
+`.plan/standardized-logging.md`.
+
 ## Workflow
 
 - PRs run lint/tests, `terraform validate`, Trivy, and post a plan comment;
   merge to `main` applies + deploys (OIDC). The miner needs no rollout —
   EventBridge launches the fresh image next sweep.
 - `.claude/skills/`: guides for the five most common changes (new failure
-  type, new safety category, judge model switch, querying results, E2E
+  mode, new safety category, judge model switch, querying results, E2E
   smoke).
 - Specs in `docs/sdd/specs/` are spec-anchored: behavior changes start by
   updating the matching `SPEC-*` requirement and its Anchors table.

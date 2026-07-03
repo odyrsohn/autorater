@@ -7,6 +7,8 @@ import json
 import logging
 import urllib.request
 
+from miner import obslog
+
 log = logging.getLogger("miner.alerts")
 
 
@@ -35,7 +37,13 @@ class AlertClient:
                 None, self._post, payload
             )
         except Exception as exc:  # noqa: BLE001 — alerting must never kill mining
-            log.error("alert webhook failed: %s", exc)
+            obslog.log_event(
+                log,
+                "alert_webhook_failed",
+                level=logging.ERROR,
+                failure_mode="webhook_io",
+                err=str(exc),
+            )
             return False
         self.sent += 1
         return 200 <= status < 300
