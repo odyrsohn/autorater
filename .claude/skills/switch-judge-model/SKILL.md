@@ -13,7 +13,7 @@ one config change. Spec anchor:
 
 | Context | Change |
 |---|---|
-| Production (ECS) | `judge_model` variable in `iac/variables.tf` (or env tfvars) → flows into the miner task env as `JUDGE_MODEL` |
+| Production (ECS) | `judge_model` variable in `iac/aws/variables.tf` (or env tfvars) → flows into the miner task env as `JUDGE_MODEL` |
 | Local run | `export JUDGE_MODEL=google/gemini-2.5-flash` |
 | Code default | `DEFAULT_MODEL` in `miner/miner/judge.py` — change only with the spec |
 

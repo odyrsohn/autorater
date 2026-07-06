@@ -40,18 +40,28 @@ records.
   (TTL 900s) after a crash — no permanent lockout.
 - **REQ-STATE-7** Local dir sources use the same cursor contract (path
   order + durable store), so local runs also resume across processes.
+- **REQ-STATE-8** State backends are multi-cloud: `cursor_store_from_env` /
+  `source_from_env` / `results_sink_from_env` select on `CLOUD_PROVIDER`
+  (`aws`→DynamoDB/S3/S3, `azure`→Table Storage/Blob/ADLS, unset→legacy
+  local fallback, unknown→fail fast). `TableCursorStore` implements the
+  identical lease semantics as `DynamoCursorStore` (conditional
+  create-if-absent, ETag-guarded takeover on expiry) — same contract,
+  different primitive. `BlobSource` resumes via client-side filtering of a
+  lexicographically ordered listing (Blob has no `StartAfter`), preserving
+  the same at-least-once/chronological guarantees as `S3Source`.
 
 ## Anchors
 
 | Req | Implementation | Tests |
 |---|---|---|
-| REQ-STATE-1 | `miner/miner/sources.py` `DynamoCursorStore`, `FileCursorStore`; `iac/dynamodb.tf` | `tests/test_sources.py` `TestFileCursorStore.test_cursor_survives_reopen` |
+| REQ-STATE-1 | `miner/miner/sources.py` `DynamoCursorStore`, `FileCursorStore`; `iac/aws/dynamodb.tf` | `tests/test_sources.py` `TestFileCursorStore.test_cursor_survives_reopen` |
 | REQ-STATE-2 | `S3Source.poll` StartAfter | `TestS3SourceResume.test_second_sweep_lists_after_cursor` |
 | REQ-STATE-3 | `S3Source.poll` post-yield `store.set` | `test_partial_crash_resumes_at_least_once` |
 | REQ-STATE-4 | module docstring; key scheme from ingestion repo | design note (review gate) |
 | REQ-STATE-5 | `DynamoCursorStore.acquire_lease`; `worker.main` | `TestFileCursorStore.test_lease_blocks_second_owner` (same contract) |
 | REQ-STATE-6 | `release_lease` in `worker.main` finally; `LEASE_TTL_SECONDS` | `test_expired_lease_taken_over`, `test_lease_reentrant_for_same_owner` |
 | REQ-STATE-7 | `LocalDirSource.poll` | `TestLocalDirSourceResume.*` |
+| REQ-STATE-8 | `sources.py` `cursor_store_from_env`/`source_from_env`; `results.py` `results_sink_from_env`; `azure_sources.py` `TableCursorStore`/`BlobSource` | `tests/test_azure_adapters.py` (all classes) |
 
 ## Verification
 

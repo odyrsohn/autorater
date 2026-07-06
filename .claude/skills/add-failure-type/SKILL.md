@@ -32,7 +32,7 @@ everywhere (logs, alerts, results, Glue) — never `failure_type`.
    `test_severe_case_fires_alert`.
 4. **Analytics** — nothing to change: `failure_mode` is already a results
    column and the `top-failure-types` Athena query picks it up. Only touch
-   `iac/analytics.tf` if you add a NEW results field.
+   `iac/aws/analytics.tf` if you add a NEW results field.
 5. **Docs** — update the taxonomy list in the spec + the pipeline diagram
    in `docs/architecture.md` if it names modes.
 

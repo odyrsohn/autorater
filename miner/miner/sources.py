@@ -215,6 +215,22 @@ class S3Source:
 
 
 def cursor_store_from_env() -> CursorStore:
+    """Provider-agnostic selection (docs/cloud-portability.md):
+    CLOUD_PROVIDER=azure -> Table Storage, =aws -> DynamoDB; unset keeps
+    legacy behavior (DynamoDB if CURSOR_TABLE set, else the local file)."""
+    provider = os.getenv("CLOUD_PROVIDER", "")
+    if provider == "azure":
+        from miner.azure_sources import TableCursorStore
+
+        return TableCursorStore(
+            endpoint=os.environ["CURSOR_TABLE_ENDPOINT"],
+            table_name=os.environ["CURSOR_TABLE_NAME"],
+        )
+    if provider == "aws":
+        return DynamoCursorStore(os.environ["CURSOR_TABLE"])
+    if provider:
+        raise ValueError(f"unknown CLOUD_PROVIDER {provider!r} (want aws or azure)")
+
     table = os.getenv("CURSOR_TABLE")
     if table:
         return DynamoCursorStore(table)
@@ -222,6 +238,21 @@ def cursor_store_from_env() -> CursorStore:
 
 
 def source_from_env(cursor_store: CursorStore):
+    """Same selection contract as cursor_store_from_env."""
+    provider = os.getenv("CLOUD_PROVIDER", "")
+    if provider == "azure":
+        from miner.azure_sources import BlobSource
+
+        return BlobSource(
+            account_url=os.environ["DATA_LAKE_ACCOUNT_URL"],
+            cursor_store=cursor_store,
+            container_name=os.getenv("DATA_LAKE_CONTAINER", "data-lake"),
+        )
+    if provider == "aws":
+        return S3Source(os.environ["DATA_LAKE_BUCKET"], cursor_store)
+    if provider:
+        raise ValueError(f"unknown CLOUD_PROVIDER {provider!r} (want aws or azure)")
+
     bucket = os.getenv("DATA_LAKE_BUCKET")
     if bucket:
         return S3Source(bucket, cursor_store)

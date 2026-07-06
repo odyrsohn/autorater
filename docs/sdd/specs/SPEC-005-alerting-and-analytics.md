@@ -81,6 +81,19 @@ verdict queryable for reports, cost tracking and regression forensics.
   standardized key across logs, alert payloads, results rows, the Glue
   column, and named queries — never `failure_type`. Historical Athena rows
   written before the rename return NULL for `failure_mode`.
+- **REQ-OUT-13** The IaC is **multi-cloud**: two sibling roots (`iac/aws`,
+  `iac/azure`) with identical variable names; both must `terraform validate`
+  in CI. Azure mirrors: Container Apps Job with a `schedule_trigger_config`
+  cron (translation of EventBridge→RunTask — no separate rule/target/
+  pass-role chain needed) for the miner + an always-on Container App for
+  alerting; ADLS Gen2 + Synapse serverless SQL (translation of S3+Glue+
+  Athena — same partition-projection idea via `filepath()`, queries in
+  `iac/azure/synapse-queries.sql`); Table Storage (translation of DynamoDB);
+  Key Vault secrets (translation of SSM, `ignore_changes = [value]`);
+  Log Analytics saved searches (translation of the saved Logs Insights
+  queries) + a scheduled-query alert (translation of the alert-storm metric
+  alarm). Azure uses `local.common_tags` per resource (no provider
+  default_tags). Gaps documented in `docs/cloud-portability.md`.
 
 ## Anchors
 
@@ -90,21 +103,24 @@ verdict queryable for reports, cost tracking and regression forensics.
 | REQ-OUT-2 | `alerting/dedupe/dedupe.go` `Cache.Admit` | `dedupe_test.go` all; `TestDuplicateFingerprintSuppressed` |
 | REQ-OUT-3 | `handler.go` routing; `dispatch/dispatch.go` | `TestHighSeverityGoesToSlackOnly`, `TestCriticalPagesBothChannels` |
 | REQ-OUT-4 | `handler.go` delivered==0 branch | `TestAllChannelsFailingReturns502` |
-| REQ-OUT-5 | `iac/secrets.tf`, `iac/ecs.tf` alerting secrets | terraform validate |
+| REQ-OUT-5 | `iac/aws/secrets.tf`, `iac/aws/ecs.tf` alerting secrets | terraform validate |
 | REQ-OUT-6 | `miner/miner/results.py` `ResultsSink.flush`; `worker.py` `_judge_case` results dict | `tests/test_results.py`; `test_worker.py` `TestResultsWiring`, `TestSliceDimensionPropagation.test_results_row_carries_dims` |
-| REQ-OUT-7 | `iac/analytics.tf` Glue table columns + projection params | terraform validate + schema review |
-| REQ-OUT-8 | `iac/analytics.tf` `locals.named_queries`, workgroup | terraform validate |
-| REQ-OUT-9 | `worker.report` → `sweep_summary`; `iac/analytics.tf` `locals.miner_metrics` filter pattern | E2E (`.plan/standardized-logging.md`); `test_sweep_summary_event_is_the_stats_contract`; filter/key match review |
+| REQ-OUT-7 | `iac/aws/analytics.tf` Glue table columns + projection params | terraform validate + schema review |
+| REQ-OUT-8 | `iac/aws/analytics.tf` `locals.named_queries`, workgroup | terraform validate |
+| REQ-OUT-9 | `worker.report` → `sweep_summary`; `iac/aws/analytics.tf` `locals.miner_metrics` filter pattern | E2E (`.plan/standardized-logging.md`); `test_sweep_summary_event_is_the_stats_contract`; filter/key match review |
 | REQ-OUT-10 | `alerting/main.go` base attrs; `handler.go` event calls; `dispatch/dispatch.go` `Alert` fields | `handler_test.go` `TestHighSeverityGoesToSlackOnly` (envelope + dims), `TestDuplicateFingerprintSuppressed` |
-| REQ-OUT-11 | `iac/queries.tf` `aws_cloudwatch_query_definition.oncall` | `terraform validate`; query text review against emitted field names |
-| REQ-OUT-12 | rename applied in `worker.py`, `dispatch.go` (`FailureMode` tag), `iac/analytics.tf` | grep gate: no `failure_type` outside this note; `handler_test.go`, `test_worker.py` all use `failure_mode` |
+| REQ-OUT-11 | `iac/aws/queries.tf` `aws_cloudwatch_query_definition.oncall` | `terraform validate`; query text review against emitted field names |
+| REQ-OUT-12 | rename applied in `worker.py`, `dispatch.go` (`FailureMode` tag), `iac/aws/analytics.tf` | grep gate: no `failure_type` outside this note; `handler_test.go`, `test_worker.py` all use `failure_mode` |
+| REQ-OUT-13 | `iac/azure/containerapps.tf`, `synapse.tf`, `synapse-queries.sql`, `secrets.tf`, `queries.tf`, `monitor.tf` | `terraform validate` (CI matrix); query text review against emitted field names |
 
 ## Verification
 
 ```bash
+for root in iac/aws iac/azure; do
+  (cd "$root" && terraform init -backend=false && terraform validate)
+done
 cd alerting && go test -race ./...
-cd ../miner && python3 -m unittest tests.test_results tests.test_worker
-cd ../iac && terraform init -backend=false && terraform validate
+cd ../miner && python3 -m unittest tests.test_results tests.test_worker tests.test_azure_adapters
 grep -rn "failure_type" --include='*.go' --include='*.py' --include='*.tf' . && echo "RENAME VIOLATION" || echo ok
 ```
 

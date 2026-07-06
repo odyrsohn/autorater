@@ -69,15 +69,15 @@ cat results/results/dt=*/*.jsonl | python3 -m json.tool --json-lines
 
 - **New results field**: add it in `MiningWorker._judge_case`'s
   `results.write(...)` dict AND as a column in the Glue table
-  (`iac/analytics.tf`) — same name, Athena-compatible type. Old rows simply
+  (`iac/aws/analytics.tf`) — same name, Athena-compatible type. Old rows simply
   return NULL for it. Also add it to the `case_judged` log event if it's a
   slice-worthy dimension.
 - **New canned query**: add to `locals.named_queries` in
-  `iac/analytics.tf`.
+  `iac/aws/analytics.tf`.
 - **New saved Logs Insights query**: add to `locals.autorater_saved_queries`
-  in `iac/queries.tf`.
+  in `iac/aws/queries.tf`.
 - **New dashboard metric**: add the key to the `sweep_summary` event
   (`MiningWorker.report`) and a matching entry in `locals.miner_metrics`
-  + a widget in `iac/analytics.tf`. Event name + stats keys are a
+  + a widget in `iac/aws/analytics.tf`. Event name + stats keys are a
   contract — never rename existing ones without moving the filter in the
   same change.

@@ -29,15 +29,31 @@ Diagrams: [docs/architecture.md](docs/architecture.md)
 │   └── miner/             detector.py (failure taxonomy + sliding window),
 │                          safety.py (abuse/injection/self-harm/PII classifier),
 │                          dedup.py (Jaccard cost gate), judge.py (OpenRouter +
-│                          mock, accounting), sources.py (durable cursor + lease),
-│                          results.py (JSONL sinks), worker.py
+│                          mock, accounting), sources.py + azure_sources.py
+│                          (durable cursor + lease, AWS/Azure), results.py
+│                          (JSONL sinks, AWS/Azure), worker.py
 ├── alerting/              Go webhook: TTL dedupe + Slack/PagerDuty dispatch
-├── iac/                   Terraform: ECS, EventBridge cron, DynamoDB state,
+├── iac/aws/               Terraform: ECS, EventBridge cron, DynamoDB state,
 │                          results lake + Glue/Athena, CloudWatch dashboard,
-│                          SSM secrets, default_tags  → see iac/README.md
-├── docs/                  architecture diagrams + FinOps policy
-└── .github/workflows/     lint/tests/tf-validate/trivy → plan (PR) → apply+deploy
+│                          SSM secrets, default_tags
+├── iac/azure/             Terraform twin: Container Apps (+ cron Job),
+│                          Table Storage, ADLS Gen2 + Synapse serverless,
+│                          Key Vault, Log Analytics  → see iac/README.md
+├── docs/                  architecture diagrams, FinOps policy,
+│                          cloud-portability.md (AWS<->Azure translation)
+└── .github/workflows/     lint/tests/tf-validate(both roots)/trivy → plan → deploy
 ```
+
+## Multi-cloud (AWS + Azure)
+
+Both providers are valid deployment targets. The miner's state/source/
+results seams switch backend with one env var
+(`CLOUD_PROVIDER=aws|azure` — DynamoDB↔Table Storage cursor/lease,
+S3↔Blob source, S3↔ADLS results, all lazily imported). Athena/Glue's
+translation is Synapse serverless SQL (`iac/azure/synapse-queries.sql`
+ships OPENROWSET translations of all seven canned queries). Full
+translation table, env matrix and gaps:
+[docs/cloud-portability.md](docs/cloud-portability.md).
 
 ## Local evaluation runs
 
@@ -84,7 +100,7 @@ snake_case `msg` event name) plus, whenever known, five slice dimensions:
 `tenant_id`, `failure_mode`, `lang`, `client_platform`/`client_os_version`,
 `serving_model` (+ judge-assigned `judge_category`, e.g.
 `hallucination`). Five saved CloudWatch Logs Insights queries
-(`iac/queries.tf`: `by-tenant`, `by-failure-mode`, `by-language`,
+(`iac/aws/queries.tf`: `by-tenant`, `by-failure-mode`, `by-language`,
 `by-client`, `by-model`) answer on-call questions live by editing one
 literal. Design: [.plan/standardized-logging.md](.plan/standardized-logging.md).
 

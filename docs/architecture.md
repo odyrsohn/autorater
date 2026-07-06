@@ -104,7 +104,7 @@ flowchart LR
 
 ```mermaid
 flowchart LR
-    TF[Terraform iac/secrets.tf\ndeclares parameters,\nignore_changes = value] -->|creates| SSM[/SSM SecureString\n/projects/autorater/*/]
+    TF[Terraform iac/aws/secrets.tf\ndeclares parameters,\nignore_changes = value] -->|creates| SSM[/SSM SecureString\n/projects/autorater/*/]
     OP[operator\naws ssm put-parameter --overwrite] -->|sets real values| SSM
     SSM -->|ECS secrets valueFrom| TASKS[miner + alerting tasks\nenv at container start]
 ```

@@ -3,9 +3,11 @@
 Evaluation-mining pipeline: async Python miner sweeps ingested LLM traffic
 for runtime failures + safety violations, cost-gates cases through semantic
 dedup, scores with an LLM-as-Judge (OpenRouter, Gemini default), lands
-verdicts in an Athena-queryable results lake, and alerts through a Go
-webhook (Slack/PagerDuty). Terraform in `iac/`, region `us-east-1`.
-Diagrams: `docs/architecture.md`. Specs: `docs/sdd/`.
+verdicts in a SQL-queryable results lake, and alerts through a Go
+webhook (Slack/PagerDuty). **Multi-cloud**: Terraform in `iac/aws`
+(us-east-1, Athena/Glue) AND `iac/azure` (eastus, Synapse serverless) —
+both valid targets. Diagrams: `docs/architecture.md`. Specs: `docs/sdd/`.
+Translation table: `docs/cloud-portability.md`.
 
 ## Components & commands
 
@@ -13,10 +15,24 @@ Diagrams: `docs/architecture.md`. Specs: `docs/sdd/`.
 |---|---|---|
 | Mining worker (Py 3.12) | `miner/` | `python3 -m unittest discover -s tests` · `ruff check .` · `ruff format --check .` |
 | Alerting engine (Go 1.22) | `alerting/` | `go test -race ./...` · `gofmt -l .` · `go vet ./...` |
-| Terraform | `iac/` | `terraform fmt -check -recursive` · `terraform init -backend=false && terraform validate` |
+| Terraform (BOTH roots) | `iac/aws/`, `iac/azure/` | per root: `terraform fmt -check -recursive` · `terraform init -backend=false && terraform validate` |
 
 Local E2E: see skill `run-e2e-smoke` (alerting in mock-dispatch mode +
 miner over a JSONL dir with `CURSOR_FILE`; second sweep must process 0).
+
+## Multi-cloud
+
+Two sibling IaC roots — keep them **symmetric**: a resource added to one is
+added to the other in the same change, or the gap is recorded in
+`docs/cloud-portability.md`. The miner picks its backends from
+`CLOUD_PROVIDER=aws|azure` (unset = local/dev fallbacks; unknown = fail
+fast): `cursor_store_from_env` (DynamoDB ↔ Table Storage, same
+conditional-write lease), `source_from_env` (S3 ↔ Blob), and
+`results_sink_from_env` (S3 ↔ ADLS Gen2 for Synapse). Azure SDKs are
+lazily imported like boto3; adapters live in `miner/miner/azure_sources.py`
++ `BlobResultsSink` in `results.py`, tested with fakes. The seven Athena
+named queries have Synapse serverless twins in
+`iac/azure/synapse-queries.sql` (OPENROWSET + filepath()).
 
 ## Hard conventions
 
@@ -36,16 +52,16 @@ miner over a JSONL dir with `CURSOR_FILE`; second sweep must process 0).
   not reintroduce in-memory seen-sets.
 - **Results rows are the query surface**: any new field written by
   `MiningWorker._judge_case` → results sink must be added to the Glue table
-  columns in `iac/analytics.tf` and, if relevant, the named queries.
+  columns in `iac/aws/analytics.tf` and, if relevant, the named queries.
 - **`sweep_summary` is a metrics contract**: `worker.report()`'s structured
-  event feeds CloudWatch metric filters (`iac/analytics.tf`). Renaming the
+  event feeds CloudWatch metric filters (`iac/aws/analytics.tf`). Renaming the
   event name or a field key breaks the dashboard — treat both as API.
 - **`failure_mode` is the standardized key** — never `failure_type` —
   across logs, alert payloads, results rows, the Glue column and named
   queries. `judge_category` is a *separate* judge-assigned classification
   (`hallucination`/`factual_error`/`refusal`/`format`/`other`); a
   `retrieval_failure` case commonly has `judge_category=hallucination`.
-- **Tags**: five `app:*` tags via provider `default_tags` (`iac/main.tf`);
+- **Tags**: five `app:*` tags via provider `default_tags` (`iac/aws/main.tf`);
   never per-resource. **Secrets**: SSM SecureStrings under
   `/projects/autorater/` (`OPENROUTER_API_KEY`, `SLACK_WEBHOOK_URL`,
   `PAGERDUTY_ROUTING_KEY`), values set manually per `iac/README.md`.
@@ -64,8 +80,8 @@ plus whichever slice-dimension keys are known: `tenant_id`, `failure_mode`,
 via `.With(...)`. **Never log prompt/response content.**
 
 Event names + field keys are a compatibility contract — CloudWatch metric
-filters (`iac/analytics.tf`, `iac/observability.tf`) and five saved Logs
-Insights queries (`iac/queries.tf`: `by-tenant`, `by-failure-mode`,
+filters (`iac/aws/analytics.tf`, `iac/aws/observability.tf`) and five saved Logs
+Insights queries (`iac/aws/queries.tf`: `by-tenant`, `by-failure-mode`,
 `by-language`, `by-client`, `by-model`) match on them. Renaming one means
 moving the filter/query in the same change. Full design:
 `.plan/standardized-logging.md`.
