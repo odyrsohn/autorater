@@ -29,8 +29,9 @@ not thousands — and a flaky judge must never take the pipeline down.
   collapse).
 - **REQ-JUDGE-3** The production judge calls OpenRouter's OpenAI-compatible
   chat completions API with `temperature: 0`; model comes from
-  `JUDGE_MODEL` (default `google/gemini-2.5-flash`); provider/model switch
-  is config-only.
+  `JUDGE_MODEL` (default `anthropic/claude-sonnet-5`) with reasoning effort
+  from `JUDGE_REASONING_EFFORT` (default `medium`); provider/model/effort
+  switch is config-only.
 - **REQ-JUDGE-4** Verdict parsing tolerates markdown fences and chatter;
   scores clamp to 0–100; unknown verdicts normalize to `degraded`.
 - **REQ-JUDGE-5** Any judge invocation/parse failure yields the fallback

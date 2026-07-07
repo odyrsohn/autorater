@@ -4,7 +4,7 @@ A Python mining worker sweeps ingested production LLM traffic for runtime
 failures (retrieval misses, non-terminating loops, truncations) **and safety
 violations** (prompt injection, self-harm, abuse, PII leaks), gates cases
 through cost controls, scores survivors with an LLM-as-Judge (**OpenRouter,
-Gemini by default**), lands every verdict in an **Athena-queryable results
+Claude Sonnet 5 at medium reasoning effort by default**), lands every verdict in an **Athena-queryable results
 lake**, and reports severe regressions to a Go alerting engine that
 deduplicates and pages Slack/PagerDuty.
 
@@ -84,13 +84,14 @@ view of the cost gate. Run it twice: the second sweep processes
 
 ```bash
 export OPENROUTER_API_KEY=sk-or-...     # locally; ECS gets it from SSM
-export JUDGE_MODEL=google/gemini-2.5-flash   # switch provider/model here
+export JUDGE_MODEL=anthropic/claude-sonnet-5    # switch provider/model here
+export JUDGE_REASONING_EFFORT=medium            # low|medium|high
 ```
 
 Without the key the deterministic mock judge runs — tests and local dev stay
 free. `judge.py` talks to OpenRouter's OpenAI-compatible endpoint, so any
-hosted model (`anthropic/claude-sonnet-5`, `openai/gpt-...`) is one env
-change. HTTP/parse failures degrade to a conservative fallback verdict and
+hosted model (`anthropic/claude-haiku-4.5`, `google/gemini-2.5-flash`,
+`openai/gpt-...`) is one env change. HTTP/parse failures degrade to a conservative fallback verdict and
 are counted (`judge_failures`), never crashing a sweep.
 
 ## Structured logging & on-call slicing

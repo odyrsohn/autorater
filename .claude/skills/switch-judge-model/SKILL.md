@@ -14,12 +14,14 @@ one config change. Spec anchor:
 | Context | Change |
 |---|---|
 | Production (ECS) | `judge_model` variable in `iac/aws/variables.tf` (or env tfvars) → flows into the miner task env as `JUDGE_MODEL` |
-| Local run | `export JUDGE_MODEL=google/gemini-2.5-flash` |
-| Code default | `DEFAULT_MODEL` in `miner/miner/judge.py` — change only with the spec |
+| Local run | `export JUDGE_MODEL=anthropic/claude-sonnet-5` |
+| Reasoning effort | `judge_reasoning_effort` TF var / `JUDGE_REASONING_EFFORT` env (`low`\|`medium`\|`high`, default `medium`) — passed as `reasoning.effort` to models that support it |
+| Code default | `DEFAULT_MODEL` / `DEFAULT_REASONING_EFFORT` in `miner/miner/judge.py` — change only with the spec |
 
-Model ids are OpenRouter ids: `google/gemini-2.5-flash`,
-`anthropic/claude-sonnet-5`, `openai/gpt-...`, etc. Check current ids and
-pricing at openrouter.ai/models before switching.
+Model ids are OpenRouter ids: `anthropic/claude-sonnet-5`,
+`anthropic/claude-haiku-4.5`, `google/gemini-2.5-flash`, `openai/gpt-...`,
+etc. Check current ids and pricing at openrouter.ai/models before
+switching.
 
 ## Steps
 

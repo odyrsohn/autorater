@@ -65,5 +65,6 @@ cat "$WORK/cursor.json"   # cursor set, lease null (released cleanly)
 ## Real-judge variant
 
 Prefix step 2 with `OPENROUTER_API_KEY=sk-or-...` — verdicts then come from
-`JUDGE_MODEL` (default `google/gemini-2.5-flash`) and `sweep_summary` shows
-real token counts. Everything else is identical.
+`JUDGE_MODEL` (default `anthropic/claude-sonnet-5`, `JUDGE_REASONING_EFFORT`
+default `medium`) and `sweep_summary` shows real token counts. Everything
+else is identical.

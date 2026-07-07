@@ -210,6 +210,10 @@ resource "azurerm_container_app_job" "miner" {
         value = var.judge_model
       }
       env {
+        name  = "JUDGE_REASONING_EFFORT"
+        value = var.judge_reasoning_effort
+      }
+      env {
         name  = "ALERT_WEBHOOK_URL"
         value = "http://alerting/v1/alerts" # in-environment DNS
       }

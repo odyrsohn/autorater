@@ -4,7 +4,8 @@ Two providers behind one interface:
 
 - ``OpenRouterJudge`` — real scoring through OpenRouter's OpenAI-compatible
   chat completions API. The model is a single env var (``JUDGE_MODEL``,
-  default Gemini), so switching Gemini → Claude → GPT is a config change,
+  default Claude Sonnet 5 at ``medium`` reasoning effort via ``JUDGE_
+  REASONING_EFFORT``), so switching model or effort is a config change,
   not a code change.
 - ``MockJudge`` — deterministic local stand-in for tests and keyless dev.
 
@@ -39,7 +40,8 @@ Response: {response}
 """
 
 SEVERE_THRESHOLD = 70
-DEFAULT_MODEL = "google/gemini-2.5-flash"
+DEFAULT_MODEL = "anthropic/claude-sonnet-5"
+DEFAULT_REASONING_EFFORT = "medium"
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 # Judge-assigned classification — distinct from failure_mode (the upstream/
@@ -129,11 +131,23 @@ class BaseJudge:
 
 
 class OpenRouterJudge(BaseJudge):
-    """Judges via OpenRouter (OpenAI-compatible), Gemini by default."""
+    """Judges via OpenRouter (OpenAI-compatible), Claude Sonnet 5 (medium
+    reasoning effort) by default."""
 
-    def __init__(self, api_key: str, model: str | None = None, timeout: float = 30.0):
+    def __init__(
+        self,
+        api_key: str,
+        model: str | None = None,
+        reasoning_effort: str | None = None,
+        timeout: float = 30.0,
+    ):
         super().__init__(model or os.getenv("JUDGE_MODEL") or DEFAULT_MODEL)
         self.api_key = api_key
+        self.reasoning_effort = (
+            reasoning_effort
+            or os.getenv("JUDGE_REASONING_EFFORT")
+            or DEFAULT_REASONING_EFFORT
+        )
         self.timeout = timeout
 
     def _invoke(self, prompt: str, failure_mode: str) -> str:
@@ -142,6 +156,7 @@ class OpenRouterJudge(BaseJudge):
                 "model": self.model,
                 "messages": [{"role": "user", "content": prompt}],
                 "temperature": 0,
+                "reasoning": {"effort": self.reasoning_effort},
             }
         ).encode("utf-8")
         req = urllib.request.Request(
@@ -210,7 +225,11 @@ def judge_from_env() -> BaseJudge:
     if api_key:
         judge = OpenRouterJudge(api_key)
         obslog.log_event(
-            log, "judge_selected", judge_model=judge.model, provider="openrouter"
+            log,
+            "judge_selected",
+            judge_model=judge.model,
+            reasoning_effort=judge.reasoning_effort,
+            provider="openrouter",
         )
         return judge
     obslog.log_event(

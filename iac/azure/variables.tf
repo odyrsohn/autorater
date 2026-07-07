@@ -44,7 +44,13 @@ variable "env" {
 variable "judge_model" {
   description = "OpenRouter model id for the LLM-as-Judge (identical to the aws root)"
   type        = string
-  default     = "google/gemini-2.5-flash"
+  default     = "anthropic/claude-sonnet-5"
+}
+
+variable "judge_reasoning_effort" {
+  description = "Reasoning effort passed to the judge model (low|medium|high), identical to the aws root"
+  type        = string
+  default     = "medium"
 }
 
 variable "miner_cron" {

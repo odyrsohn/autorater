@@ -2,7 +2,8 @@
 
 Evaluation-mining pipeline: async Python miner sweeps ingested LLM traffic
 for runtime failures + safety violations, cost-gates cases through semantic
-dedup, scores with an LLM-as-Judge (OpenRouter, Gemini default), lands
+dedup, scores with an LLM-as-Judge (OpenRouter, Claude Sonnet 5 / medium
+effort default), lands
 verdicts in a SQL-queryable results lake, and alerts through a Go
 webhook (Slack/PagerDuty). **Multi-cloud**: Terraform in `iac/aws`
 (us-east-1, Athena/Glue) AND `iac/azure` (eastus, Synapse serverless) —

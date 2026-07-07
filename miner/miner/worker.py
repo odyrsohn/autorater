@@ -6,7 +6,7 @@ Pipeline per polled record:
     safety classifier ┘
           │ (failure + safety cases)
           ▼
-    semantic dedup gate ──▶ LLM-as-Judge (OpenRouter/Gemini or mock)
+    semantic dedup gate ──▶ LLM-as-Judge (OpenRouter/Claude or mock)
         (cost control)          │
                                 ├─▶ results sink (JSONL → Athena)
                                 └─▶ severe/critical ──▶ alert webhook

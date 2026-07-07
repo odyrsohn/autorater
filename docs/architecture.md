@@ -30,7 +30,7 @@ flowchart LR
     MINER -->|severe/critical alerts| ALERTING
     ALERTING -->|high| SLACK[Slack webhook]
     ALERTING -->|critical| PD[PagerDuty Events v2]
-    OR[OpenRouter API\nJUDGE_MODEL=google/gemini-2.5-flash]
+    OR[OpenRouter API\nJUDGE_MODEL=anthropic/claude-sonnet-5\nreasoning.effort=medium]
     MINER <-->|LLM-as-Judge| OR
     SSM -.->|OPENROUTER_API_KEY| MINER
     SSM -.->|SLACK_WEBHOOK_URL\nPAGERDUTY_ROUTING_KEY| ALERTING
@@ -48,7 +48,7 @@ flowchart TD
     SC -->|safety:&lt;category&gt; case| GATE
     GATE{semantic dedup gate\nJaccard ≥ 0.8?}
     GATE -->|duplicate\nsuppressed++| DROP[drop — no API spend]
-    GATE -->|novel| JUDGE[LLM-as-Judge\nOpenRouter/Gemini or mock]
+    GATE -->|novel| JUDGE[LLM-as-Judge\nOpenRouter/Claude or mock]
     JUDGE --> SINK[(results sink\nJSONL)]
     JUDGE --> SEV{severity?}
     SEV -->|critical: injection, self-harm,\nwindow anomaly| ALERT[POST /v1/alerts]

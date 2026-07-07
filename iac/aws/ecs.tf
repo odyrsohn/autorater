@@ -150,6 +150,7 @@ resource "aws_ecs_task_definition" "miner" {
       { name = "DATA_LAKE_BUCKET", value = var.data_lake_bucket },
       { name = "ALERT_WEBHOOK_URL", value = "http://alerting.${var.app_name}.local:8070/v1/alerts" },
       { name = "JUDGE_MODEL", value = var.judge_model },
+      { name = "JUDGE_REASONING_EFFORT", value = var.judge_reasoning_effort },
       { name = "CURSOR_TABLE", value = aws_dynamodb_table.miner_state.name },
       { name = "RESULTS_BUCKET", value = aws_s3_bucket.results.bucket },
       { name = "APP_ENV", value = var.env },
