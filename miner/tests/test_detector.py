@@ -4,7 +4,12 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from miner.detector import SlidingWindowDetector, classify_failure, detect_repetition
+from miner.detector import (
+    KNOWN_UPSTREAM_FAILURE_MODES,
+    SlidingWindowDetector,
+    classify_failure,
+    detect_repetition,
+)
 
 
 class TestClassifyFailure(unittest.TestCase):
@@ -14,6 +19,20 @@ class TestClassifyFailure(unittest.TestCase):
 
     def test_explicit_error_type_wins(self):
         self.assertEqual(classify_failure({"error_type": "timeout"}), "timeout")
+
+    def test_known_upstream_failure_modes_pass_through(self):
+        # Voice-client (AAOS-style) failures the text heuristics can't see:
+        # the LLM stage never observes raw audio, so the upstream client
+        # reports these directly via error_type.
+        for mode in KNOWN_UPSTREAM_FAILURE_MODES:
+            with self.subTest(mode=mode):
+                self.assertEqual(
+                    classify_failure({"error_type": mode, "response": "ok"}), mode
+                )
+
+    def test_known_upstream_failure_modes_documented(self):
+        self.assertIn("asr_degradation", KNOWN_UPSTREAM_FAILURE_MODES)
+        self.assertIn("tts_degradation", KNOWN_UPSTREAM_FAILURE_MODES)
 
     def test_retrieval_failure_marker(self):
         record = {"response": "I found no relevant documents for that query."}

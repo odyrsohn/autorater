@@ -6,7 +6,13 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from miner.judge import DEFAULT_MODEL, MockJudge, OpenRouterJudge, judge_from_env
+from miner.judge import (
+    CATEGORIES,
+    DEFAULT_MODEL,
+    MockJudge,
+    OpenRouterJudge,
+    judge_from_env,
+)
 
 
 class StubbedOpenRouterJudge(OpenRouterJudge):
@@ -35,22 +41,37 @@ def openrouter_response(content: str, prompt_tokens=100, completion_tokens=30):
     }
 
 
-CASE = {"failure_type": "retrieval_failure", "prompt": "p", "response": "r"}
+CASE = {"failure_mode": "retrieval_failure", "prompt": "p", "response": "r"}
 
 
 class TestOpenRouterJudge(unittest.TestCase):
     def test_successful_scoring(self):
         judge = StubbedOpenRouterJudge(
             openrouter_response(
-                '{"score": 88, "verdict": "regression", "rationale": "bad"}'
+                '{"score": 88, "verdict": "regression", "category": "hallucination", "rationale": "bad"}'
             )
         )
         v = judge.score(CASE)
         self.assertEqual(v.score, 88)
         self.assertEqual(v.verdict, "regression")
+        self.assertEqual(v.category, "hallucination")
         self.assertTrue(v.severe)
         self.assertEqual(judge.input_tokens, 100)
         self.assertEqual(judge.output_tokens, 30)
+
+    def test_category_defaults_to_other_when_absent(self):
+        judge = StubbedOpenRouterJudge(
+            openrouter_response('{"score": 10, "verdict": "pass", "rationale": "ok"}')
+        )
+        self.assertEqual(judge.score(CASE).category, "other")
+
+    def test_category_normalized_when_invalid(self):
+        judge = StubbedOpenRouterJudge(
+            openrouter_response(
+                '{"score": 10, "verdict": "pass", "category": "not-a-real-category", "rationale": "ok"}'
+            )
+        )
+        self.assertEqual(judge.score(CASE).category, "other")
 
     def test_request_shape(self):
         judge = StubbedOpenRouterJudge(
@@ -81,6 +102,7 @@ class TestOpenRouterJudge(unittest.TestCase):
         judge = StubbedOpenRouterJudge(fail=True)
         v = judge.score(CASE)
         self.assertEqual((v.score, v.verdict), (50, "degraded"))
+        self.assertEqual(v.category, "other")
         self.assertEqual(judge.failures, 1)
 
     def test_malformed_response_falls_back(self):
@@ -120,12 +142,13 @@ class TestMockJudge(unittest.TestCase):
     def test_deterministic_and_accounted(self):
         judge = MockJudge()
         v1 = judge.score(
-            {"failure_type": "non_terminating_loop", "prompt": "p", "response": "r"}
+            {"failure_mode": "non_terminating_loop", "prompt": "p", "response": "r"}
         )
         v2 = judge.score(
-            {"failure_type": "non_terminating_loop", "prompt": "p", "response": "r"}
+            {"failure_mode": "non_terminating_loop", "prompt": "p", "response": "r"}
         )
         self.assertEqual(v1.score, v2.score)
+        self.assertEqual(v1.category, v2.category)
         self.assertTrue(v1.severe)
         self.assertEqual(judge.calls, 2)
         self.assertGreater(judge.input_tokens, 0)
@@ -133,9 +156,31 @@ class TestMockJudge(unittest.TestCase):
     def test_safety_cases_score_high(self):
         judge = MockJudge()
         v = judge.score(
-            {"failure_type": "safety:prompt_injection", "prompt": "p", "response": "r"}
+            {"failure_mode": "safety:prompt_injection", "prompt": "p", "response": "r"}
         )
         self.assertGreaterEqual(v.score, 80)
+
+    def test_retrieval_failure_maps_to_hallucination_category(self):
+        # Deterministic mapping used by the "hallucination" on-call scenario
+        # (see .plan/standardized-logging.md item 5): retrieval failures are
+        # a classic RAG hallucination trigger.
+        judge = MockJudge()
+        v = judge.score(
+            {"failure_mode": "retrieval_failure", "prompt": "p", "response": "r"}
+        )
+        self.assertEqual(v.category, "hallucination")
+
+    def test_category_always_in_allowed_set(self):
+        judge = MockJudge()
+        for mode in (
+            "non_terminating_loop",
+            "retrieval_failure",
+            "truncated_output",
+            "safety:abuse",
+            "asr_degradation",
+        ):
+            v = judge.score({"failure_mode": mode, "prompt": "p", "response": "r"})
+            self.assertIn(v.category, CATEGORIES)
 
 
 if __name__ == "__main__":

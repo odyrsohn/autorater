@@ -49,10 +49,21 @@ variable "vpc_security_group_ids" {
   type        = list(string)
 }
 
+variable "vpc_id" {
+  description = "VPC housing the Fargate tasks, needed for the Cloud Map private DNS namespace"
+  type        = string
+}
+
 variable "miner_schedule" {
   description = "EventBridge cron/rate expression triggering the mining sweep"
   type        = string
   default     = "rate(15 minutes)"
+}
+
+variable "miner_schedule_enabled" {
+  description = "Whether the EventBridge rule fires automatically. Set false to require a manual `aws stepfunctions start-execution` (dev cost control)."
+  type        = bool
+  default     = true
 }
 
 variable "data_lake_bucket" {
@@ -63,5 +74,11 @@ variable "data_lake_bucket" {
 variable "judge_model" {
   description = "OpenRouter model id for the LLM-as-Judge (switch providers by changing this)"
   type        = string
-  default     = "google/gemini-2.5-flash"
+  default     = "anthropic/claude-sonnet-5"
+}
+
+variable "judge_reasoning_effort" {
+  description = "Reasoning effort passed to the judge model (low|medium|high) where the model supports it"
+  type        = string
+  default     = "medium"
 }

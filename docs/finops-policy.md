@@ -5,7 +5,7 @@
 ## Tagging rule
 
 All AWS resources inherit five cost-allocation tags from the Terraform
-provider `default_tags` block (`iac/main.tf`): `app:name`,
+provider `default_tags` block (`iac/aws/main.tf`): `app:name`,
 `app:projectName`, `app:component`, `app:teamName`, `app:env`. Because the
 tags are applied at the provider, they propagate to every resource in the
 stack — including the observability layer itself: CloudWatch log groups,

@@ -7,12 +7,16 @@ on:
 
 permissions:
   contents: read
-  id-token: write # OIDC to AWS — no long-lived keys
+  id-token: write # OIDC to AWS/Azure — no long-lived keys
   pull-requests: write
   security-events: write
 
+# Active deployment target: repo variable CLOUD_PROVIDER (aws | azure).
+# BOTH iac roots are always validated; plan/apply/deploy target the
+# selected provider's root. See docs/cloud-portability.md.
 env:
   AWS_REGION: us-east-1
+  CLOUD_PROVIDER: ${{ vars.CLOUD_PROVIDER || 'aws' }}
 
 jobs:
   go-checks:
@@ -52,9 +56,12 @@ jobs:
 
   terraform-checks:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        provider: [aws, azure]
     defaults:
       run:
-        working-directory: iac
+        working-directory: iac/${{ matrix.provider }}
     steps:
       - uses: actions/checkout@v4
       - uses: hashicorp/setup-terraform@v3
@@ -68,7 +75,7 @@ jobs:
         uses: aquasecurity/trivy-action@0.24.0
         with:
           scan-type: config
-          scan-ref: iac
+          scan-ref: iac/${{ matrix.provider }}
           exit-code: "1"
           severity: HIGH,CRITICAL
 
@@ -79,13 +86,22 @@ jobs:
     environment: plan
     steps:
       - uses: actions/checkout@v4
-      - uses: aws-actions/configure-aws-credentials@v4
+      - name: AWS credentials
+        if: env.CLOUD_PROVIDER == 'aws'
+        uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_TERRAFORM_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
+      - name: Azure login
+        if: env.CLOUD_PROVIDER == 'azure'
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
       - uses: hashicorp/setup-terraform@v3
       - name: Plan
-        working-directory: iac
+        working-directory: iac/${{ env.CLOUD_PROVIDER }}
         run: |
           terraform init
           terraform plan -no-color -out=tfplan \
@@ -95,11 +111,12 @@ jobs:
         with:
           script: |
             const fs = require('fs');
-            const plan = fs.readFileSync('iac/plan.txt', 'utf8').slice(0, 60000);
+            const provider = process.env.CLOUD_PROVIDER;
+            const plan = fs.readFileSync(`iac/${provider}/plan.txt`, 'utf8').slice(0, 60000);
             await github.rest.issues.createComment({
               ...context.repo,
               issue_number: context.issue.number,
-              body: '### Terraform plan\n```\n' + plan + '\n```',
+              body: `### Terraform plan (${provider})\n\`\`\`\n` + plan + '\n```',
             });
 
   terraform-apply:
@@ -109,13 +126,22 @@ jobs:
     environment: production
     steps:
       - uses: actions/checkout@v4
-      - uses: aws-actions/configure-aws-credentials@v4
+      - name: AWS credentials
+        if: env.CLOUD_PROVIDER == 'aws'
+        uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_TERRAFORM_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
+      - name: Azure login
+        if: env.CLOUD_PROVIDER == 'azure'
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
       - uses: hashicorp/setup-terraform@v3
       - name: Apply
-        working-directory: iac
+        working-directory: iac/${{ env.CLOUD_PROVIDER }}
         run: |
           terraform init
           terraform apply -auto-approve -var-file=envs/${{ vars.TF_ENV || 'dev' }}.tfvars
@@ -130,20 +156,26 @@ jobs:
         service: [miner, alerting]
     steps:
       - uses: actions/checkout@v4
-      - uses: aws-actions/configure-aws-credentials@v4
+
+      # --- AWS deploy path -------------------------------------------------
+      - name: AWS credentials
+        if: env.CLOUD_PROVIDER == 'aws'
+        uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
       - name: Login to ECR
+        if: env.CLOUD_PROVIDER == 'aws'
         id: ecr
         uses: aws-actions/amazon-ecr-login@v2
-      - name: Build and push image
+      - name: Build and push image (ECR)
+        if: env.CLOUD_PROVIDER == 'aws'
         run: |
           IMAGE="${{ steps.ecr.outputs.registry }}/autorater-${{ matrix.service }}:${{ github.sha }}"
           docker build -t "$IMAGE" ${{ matrix.service }}
           docker push "$IMAGE"
       - name: Roll alerting service
-        if: matrix.service == 'alerting'
+        if: env.CLOUD_PROVIDER == 'aws' && matrix.service == 'alerting'
         run: |
           aws ecs update-service \
             --cluster autorater-prod \
@@ -151,3 +183,30 @@ jobs:
             --force-new-deployment
         # The miner needs no rollout: EventBridge launches the freshly pushed
         # task definition image on its next scheduled sweep.
+
+      # --- Azure deploy path -----------------------------------------------
+      - name: Azure login
+        if: env.CLOUD_PROVIDER == 'azure'
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Build and push image (ACR)
+        if: env.CLOUD_PROVIDER == 'azure'
+        run: |
+          RG=autorater-${{ vars.TF_ENV || 'dev' }}
+          ACR=$(az acr list -g "$RG" --query "[0].loginServer" -o tsv)
+          az acr login --name "$ACR"
+          IMAGE="$ACR/autorater-${{ matrix.service }}:${{ github.sha }}"
+          docker build -t "$IMAGE" ${{ matrix.service }}
+          docker push "$IMAGE"
+      - name: Roll alerting Container App
+        if: env.CLOUD_PROVIDER == 'azure' && matrix.service == 'alerting'
+        run: |
+          RG=autorater-${{ vars.TF_ENV || 'dev' }}
+          ACR=$(az acr list -g "$RG" --query "[0].loginServer" -o tsv)
+          az containerapp update --name alerting --resource-group "$RG" \
+            --image "$ACR/autorater-alerting:${{ github.sha }}"
+        # The miner needs no rollout: its Container Apps Job picks up the
+        # freshly pushed image on its next cron-triggered execution.

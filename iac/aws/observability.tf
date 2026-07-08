@@ -30,11 +30,13 @@ resource "aws_xray_group" "pipeline" {
   filter_expression = "service(begin_with(\"${var.app_name}\"))"
 }
 
-# Regression alerts dispatched — the signal the on-call watches.
+# Regression alerts dispatched — the signal the on-call watches. Matches
+# the alerting service's event NAME (compatibility contract with
+# handler.go's alert_dispatched call — see .plan/standardized-logging.md).
 resource "aws_cloudwatch_log_metric_filter" "alerts_dispatched" {
   name           = "${var.app_name}-${var.env}-alerts-dispatched"
   log_group_name = aws_cloudwatch_log_group.alerting.name
-  pattern        = "{ $.msg = \"alert dispatched\" }"
+  pattern        = "{ $.msg = \"alert_dispatched\" }"
 
   metric_transformation {
     name      = "AlertsDispatched"
