@@ -137,7 +137,7 @@ resource "azurerm_container_app" "alerting" {
 
     container {
       name   = "alerting"
-      image  = "${azurerm_container_registry.this.login_server}/autorater-alerting:latest"
+      image  = "${azurerm_container_registry.this.login_server}/autorater-alerting:${var.image_tag}"
       cpu    = 0.25
       memory = "0.5Gi"
 
@@ -193,7 +193,7 @@ resource "azurerm_container_app_job" "miner" {
   template {
     container {
       name   = "miner"
-      image  = "${azurerm_container_registry.this.login_server}/autorater-miner:latest"
+      image  = "${azurerm_container_registry.this.login_server}/autorater-miner:${var.image_tag}"
       cpu    = 0.5
       memory = "1Gi"
 

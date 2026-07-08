@@ -82,3 +82,9 @@ variable "judge_reasoning_effort" {
   type        = string
   default     = "medium"
 }
+
+variable "image_tag" {
+  description = "Tag CI pushes to ECR (github.sha) and the task definitions reference. Defaults to \"latest\" only for a first bootstrap apply before any image exists — CI always passes the actual sha."
+  type        = string
+  default     = "latest"
+}

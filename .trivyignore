@@ -1,0 +1,14 @@
+# AVD-AWS-0057: iac/aws/analytics.tf, aws_iam_role_policy.miner_results,
+# s3:PutObject on "<results-bucket-arn>/results/*".
+#
+# The miner writes one dynamically-named object per judged case
+# (results/dt=YYYY-MM-DD/<sweep_id>/<case_id>.json) — there is no way to
+# enumerate object keys ahead of time in an IAM policy, so a prefix-scoped
+# Resource ARN (trailing /*) is the tightest grant possible for "can write
+# any object under this prefix." This is standard practice for write access
+# to a dynamic keyspace, not an actual wildcard-permission gap.
+#
+# The other historical instance of this rule (kms:GenerateDataKey on "*")
+# was fixed directly by scoping to a dedicated CMK (aws_kms_key.results) —
+# see analytics.tf. This ignore only still matches the s3:PutObject case.
+AVD-AWS-0057

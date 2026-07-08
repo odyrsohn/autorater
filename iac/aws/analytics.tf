@@ -14,12 +14,50 @@ resource "aws_s3_bucket_public_access_block" "results" {
   restrict_public_buckets = true
 }
 
+# Customer-managed (not the AWS-owned aws/s3 key) so the results lake has
+# its own auditable key + rotation, per Trivy avd-aws-0132. The key policy
+# grants same-account principals GenerateDataKey/Decrypt only when the
+# request comes via S3 — i.e. anyone who already has s3:GetObject on this
+# bucket (Athena queries included) keeps working exactly as with the
+# managed key; this isn't opened up beyond that.
+resource "aws_kms_key" "results" {
+  description         = "CMK for the ${var.app_name}-${var.env} results bucket"
+  enable_key_rotation = true
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid       = "AccountRootAdmin"
+        Effect    = "Allow"
+        Principal = { AWS = "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root" }
+        Action    = "kms:*"
+        Resource  = "*"
+      },
+      {
+        Sid       = "SameAccountViaS3"
+        Effect    = "Allow"
+        Principal = { AWS = "*" }
+        Action    = ["kms:GenerateDataKey*", "kms:Decrypt", "kms:DescribeKey"]
+        Resource  = "*"
+        Condition = {
+          StringEquals = {
+            "kms:ViaService"       = "s3.${var.aws_region}.amazonaws.com"
+            "aws:PrincipalAccount" = data.aws_caller_identity.current.account_id
+          }
+        }
+      },
+    ]
+  })
+}
+
 resource "aws_s3_bucket_server_side_encryption_configuration" "results" {
   bucket = aws_s3_bucket.results.id
 
   rule {
     apply_server_side_encryption_by_default {
-      sse_algorithm = "aws:kms"
+      sse_algorithm     = "aws:kms"
+      kms_master_key_id = aws_kms_key.results.arn
     }
     bucket_key_enabled = true
   }
@@ -71,7 +109,7 @@ resource "aws_iam_role_policy" "miner_results" {
       {
         Effect   = "Allow"
         Action   = ["kms:GenerateDataKey"]
-        Resource = "*"
+        Resource = aws_kms_key.results.arn
         Condition = {
           StringEquals = { "kms:ViaService" = "s3.${var.aws_region}.amazonaws.com" }
         }

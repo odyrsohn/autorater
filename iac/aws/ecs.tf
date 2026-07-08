@@ -14,7 +14,7 @@ resource "aws_ecr_repository" "service" {
   for_each = toset(["miner", "alerting"])
 
   name                 = "${var.app_name}-${each.key}"
-  image_tag_mutability = "MUTABLE"
+  image_tag_mutability = "IMMUTABLE"
 
   image_scanning_configuration {
     scan_on_push = true
@@ -97,7 +97,7 @@ resource "aws_ecs_task_definition" "alerting" {
 
   container_definitions = jsonencode([{
     name      = "alerting"
-    image     = "${aws_ecr_repository.service["alerting"].repository_url}:latest"
+    image     = "${aws_ecr_repository.service["alerting"].repository_url}:${var.image_tag}"
     essential = true
     portMappings = [{
       containerPort = 8070
@@ -158,7 +158,7 @@ resource "aws_ecs_task_definition" "miner" {
 
   container_definitions = jsonencode([{
     name      = "miner"
-    image     = "${aws_ecr_repository.service["miner"].repository_url}:latest"
+    image     = "${aws_ecr_repository.service["miner"].repository_url}:${var.image_tag}"
     essential = true
     environment = [
       { name = "DATA_LAKE_BUCKET", value = var.data_lake_bucket },

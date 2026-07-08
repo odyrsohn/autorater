@@ -5,3 +5,6 @@ __pycache__/
 *.tfstate*
 tfplan
 data/
+# real environment values (account/VPC ids) — see envs/dev.tfvars.example; CI gets them from the TF_AWS_DEV_TFVARS secret
+iac/aws/dev.auto.tfvars
+iac/aws/envs/dev.tfvars

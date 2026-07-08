@@ -14,6 +14,10 @@ resource "aws_dynamodb_table" "miner_state" {
   point_in_time_recovery {
     enabled = true
   }
+
+  server_side_encryption {
+    enabled = true
+  }
 }
 
 resource "aws_iam_role_policy" "miner_state" {

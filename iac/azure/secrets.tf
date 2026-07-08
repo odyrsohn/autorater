@@ -20,6 +20,15 @@ resource "azurerm_key_vault" "this" {
   purge_protection_enabled   = false
   rbac_authorization_enabled = true
   tags                       = local.common_tags
+
+  # Default-deny data-plane access; trusted Azure services reach it via the
+  # bypass. Add your egress IP to kv_allowed_ip_rules when setting the
+  # secret values manually (see iac/README.md).
+  network_acls {
+    default_action = "Deny"
+    bypass         = "AzureServices"
+    ip_rules       = var.kv_allowed_ip_rules
+  }
 }
 
 resource "azurerm_role_assignment" "deployer_kv_secrets" {

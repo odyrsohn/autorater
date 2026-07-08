@@ -1,0 +1,7 @@
+env                    = "dev"
+vpc_id                 = "vpc-0123456789abcdef0"
+vpc_subnet_ids         = ["subnet-0123456789abcdef0", "subnet-0fedcba9876543210"]
+vpc_security_group_ids = ["sg-0123456789abcdef0"]
+data_lake_bucket       = "llm-ingestion-dev-data-lake-<account-id>"
+miner_schedule         = "rate(1 hour)"
+miner_schedule_enabled = false

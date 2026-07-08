@@ -100,12 +100,18 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
       - uses: hashicorp/setup-terraform@v3
+      - name: Materialize AWS dev tfvars
+        if: env.CLOUD_PROVIDER == 'aws'
+        run: printf '%s\n' "$TF_AWS_DEV_TFVARS" > iac/aws/envs/dev.tfvars
+        env:
+          TF_AWS_DEV_TFVARS: ${{ secrets.TF_AWS_DEV_TFVARS }}
       - name: Plan
         working-directory: iac/${{ env.CLOUD_PROVIDER }}
         run: |
           terraform init
           terraform plan -no-color -out=tfplan \
-            -var-file=envs/${{ vars.TF_ENV || 'dev' }}.tfvars | tee plan.txt
+            -var-file=envs/${{ vars.TF_ENV || 'dev' }}.tfvars \
+            -var="image_tag=${{ github.sha }}" | tee plan.txt
       - name: Comment plan on PR
         uses: actions/github-script@v7
         with:
@@ -140,11 +146,18 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
       - uses: hashicorp/setup-terraform@v3
+      - name: Materialize AWS dev tfvars
+        if: env.CLOUD_PROVIDER == 'aws'
+        run: printf '%s\n' "$TF_AWS_DEV_TFVARS" > iac/aws/envs/dev.tfvars
+        env:
+          TF_AWS_DEV_TFVARS: ${{ secrets.TF_AWS_DEV_TFVARS }}
       - name: Apply
         working-directory: iac/${{ env.CLOUD_PROVIDER }}
         run: |
           terraform init
-          terraform apply -auto-approve -var-file=envs/${{ vars.TF_ENV || 'dev' }}.tfvars
+          terraform apply -auto-approve \
+            -var-file=envs/${{ vars.TF_ENV || 'dev' }}.tfvars \
+            -var="image_tag=${{ github.sha }}"
 
   deploy-services:
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'

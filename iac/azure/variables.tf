@@ -71,3 +71,15 @@ variable "data_lake_container" {
   type        = string
   default     = "data-lake"
 }
+
+variable "image_tag" {
+  description = "Tag CI pushes to ACR (github.sha) and the Container Apps reference. Defaults to \"latest\" only for a first bootstrap apply before any image exists — CI always passes the actual sha."
+  type        = string
+  default     = "latest"
+}
+
+variable "kv_allowed_ip_rules" {
+  description = "Egress IPs (CIDR) allowed through the Key Vault network ACL for manual secret writes; empty by default"
+  type        = list(string)
+  default     = []
+}

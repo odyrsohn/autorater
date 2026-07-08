@@ -13,6 +13,10 @@ cd iac/aws   && terraform init && terraform plan  -var-file=envs/dev.tfvars && t
 cd iac/azure && terraform init && terraform plan  -var-file=envs/dev.tfvars && terraform apply -var-file=envs/dev.tfvars
 ```
 
+`iac/aws/envs/dev.tfvars` holds real account/VPC ids and is not committed —
+copy `envs/dev.tfvars.example` and fill in your environment. CI materializes
+it from the `TF_AWS_DEV_TFVARS` repository secret.
+
 CI validates **both** roots on every PR; plan/apply/deploy run against the
 provider selected by the repo variable `CLOUD_PROVIDER` (default `aws`).
 Convention: a resource added to one root is added to the other in the same
