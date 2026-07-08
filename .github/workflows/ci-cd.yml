@@ -72,7 +72,7 @@ jobs:
           terraform init -backend=false
           terraform validate
       - name: IaC security scan (Trivy)
-        uses: aquasecurity/trivy-action@0.24.0
+        uses: aquasecurity/trivy-action@v0.24.0
         with:
           scan-type: config
           scan-ref: iac/${{ matrix.provider }}
