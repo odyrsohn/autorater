@@ -49,10 +49,21 @@ variable "vpc_security_group_ids" {
   type        = list(string)
 }
 
+variable "vpc_id" {
+  description = "VPC housing the Fargate tasks, needed for the Cloud Map private DNS namespace"
+  type        = string
+}
+
 variable "miner_schedule" {
   description = "EventBridge cron/rate expression triggering the mining sweep"
   type        = string
   default     = "rate(15 minutes)"
+}
+
+variable "miner_schedule_enabled" {
+  description = "Whether the EventBridge rule fires automatically. Set false to require a manual `aws stepfunctions start-execution` (dev cost control)."
+  type        = bool
+  default     = true
 }
 
 variable "data_lake_bucket" {

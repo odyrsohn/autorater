@@ -17,7 +17,7 @@ local/dev fallbacks; unknown = fail fast).
 | Concept | AWS | Azure | Notes / gotchas |
 |---|---|---|---|
 | Compute schedule (miner) | **EventBridge** rule → ECS `RunTask` | **Container Apps Job** with `schedule_trigger_config` cron | Azure collapses the rule+target+pass-role chain into one resource — a cleaner fit, not just a translation. |
-| Compute (alerting) | **ECS Fargate** service (2 replicas) | **Container App** (2 replicas) | |
+| Compute (alerting) | **ECS Fargate** service, scale-to-zero (`desired_count=0` baseline, orchestrated to 1 for a sweep — `step_functions.tf`) | **Container App** (2 replicas, always-on) | Not yet symmetric — see gap #6 below. |
 | Registry | **ECR** | **ACR** | |
 | Cursor + lease | **DynamoDB** table, conditional `PutItem` | **Table Storage**, conditional insert + ETag-guarded update | Same semantics: create-if-absent for a fresh lease, expiry check + guarded takeover otherwise. Table RowKeys forbid `/`, so URL-shaped cursor keys are hashed (original kept as a field). |
 | Results storage | **S3** bucket | **ADLS Gen2** (hierarchical-namespace storage account) | HNS is what makes Synapse serverless SQL work directly over the filesystem. |
@@ -87,3 +87,16 @@ validate in CI regardless of the active provider.
 5. Trivy's config scanner runs on both roots in CI, but its azurerm
    ruleset has less first-party coverage than its AWS ruleset — expect a
    different noise profile.
+6. **Alerting scale-to-zero has no Azure twin yet.** `iac/aws` added a
+   Step Functions state machine (`step_functions.tf`) that scales the
+   alerting ECS service from 0 to 1 for the duration of a miner sweep and
+   back to 0 afterward, plus a Cloud Map private DNS namespace
+   (`service_discovery.tf`) so the miner can still resolve it at a stable
+   name. `iac/azure` still runs alerting as an always-on 2-replica
+   Container App. Azure Container Apps have native KEDA-based scale-to-zero
+   (`min_replicas = 0` + a scale rule) — likely a *simpler* fix on that side
+   than the AWS orchestration, not just a translation. Also added on the
+   AWS side: `miner_schedule_enabled` (bool) lets an environment disable
+   the EventBridge cron and trigger sweeps manually via
+   `aws stepfunctions start-execution`; Azure's Container Apps Job has no
+   equivalent toggle yet.

@@ -9,10 +9,10 @@ terraform {
   }
 
   backend "s3" {
-    bucket         = "mlops-terraform-state"
-    key            = "autorater/terraform.tfstate"
-    region         = "us-east-1"
-    dynamodb_table = "terraform-locks"
-    encrypt        = true
+    bucket       = "terraform-states-1969"
+    key          = "mlops/autorater/terraform.tfstate"
+    region       = "us-east-1"
+    use_lockfile = true
+    encrypt      = true
   }
 }

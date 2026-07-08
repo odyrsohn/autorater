@@ -1,9 +1,14 @@
-# Serverless cron engine: EventBridge fires the mining sweep on a schedule
-# instead of keeping a poller warm 24/7 (see docs/finops-policy.md).
+# Serverless cron engine: EventBridge fires the miner-sweep state machine
+# (step_functions.tf) on a schedule instead of keeping a poller warm 24/7
+# (see docs/finops-policy.md). Set miner_schedule_enabled = false (dev
+# default) to disable automatic firing; a sweep can still be started
+# manually with `aws stepfunctions start-execution --state-machine-arn
+# <miner_sweep_state_machine_arn output>`.
 resource "aws_cloudwatch_event_rule" "miner_schedule" {
   name                = "${var.app_name}-${var.env}-miner-sweep"
-  description         = "Launches the evaluation-mining Fargate task"
+  description         = "Launches the evaluation-mining sweep orchestration"
   schedule_expression = var.miner_schedule
+  state               = var.miner_schedule_enabled ? "ENABLED" : "DISABLED"
 }
 
 data "aws_iam_policy_document" "events_assume" {
@@ -22,7 +27,7 @@ resource "aws_iam_role" "events_run_task" {
 }
 
 resource "aws_iam_role_policy" "events_run_task" {
-  name = "run-miner-task"
+  name = "start-miner-sweep"
   role = aws_iam_role.events_run_task.id
 
   policy = jsonencode({
@@ -30,17 +35,8 @@ resource "aws_iam_role_policy" "events_run_task" {
     Statement = [
       {
         Effect   = "Allow"
-        Action   = ["ecs:RunTask"]
-        Resource = aws_ecs_task_definition.miner.arn
-        Condition = {
-          ArnEquals = { "ecs:cluster" = aws_ecs_cluster.this.arn }
-        }
-      },
-      {
-        Effect    = "Allow"
-        Action    = ["iam:PassRole"]
-        Resource  = [aws_iam_role.task_execution.arn, aws_iam_role.miner_task.arn]
-        Condition = { StringEquals = { "iam:PassedToService" = "ecs-tasks.amazonaws.com" } }
+        Action   = ["states:StartExecution"]
+        Resource = aws_sfn_state_machine.miner_sweep.arn
       },
     ]
   })
@@ -48,17 +44,6 @@ resource "aws_iam_role_policy" "events_run_task" {
 
 resource "aws_cloudwatch_event_target" "miner" {
   rule     = aws_cloudwatch_event_rule.miner_schedule.name
-  arn      = aws_ecs_cluster.this.arn
+  arn      = aws_sfn_state_machine.miner_sweep.arn
   role_arn = aws_iam_role.events_run_task.arn
-
-  ecs_target {
-    task_definition_arn = aws_ecs_task_definition.miner.arn
-    task_count          = 1
-    launch_type         = "FARGATE"
-
-    network_configuration {
-      subnets         = var.vpc_subnet_ids
-      security_groups = var.vpc_security_group_ids
-    }
-  }
 }
